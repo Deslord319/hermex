@@ -179,6 +179,7 @@ struct FileBrowserView: View {
         .background(Color(.tertiarySystemFill).opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .padding(.horizontal)
         .padding(.vertical, 10)
+        .macReadableContent(maxWidth: AdaptiveReadableContentWidth.workspace)
         .background(Color(.systemBackground))
         .overlay(alignment: .bottom) {
             Divider()

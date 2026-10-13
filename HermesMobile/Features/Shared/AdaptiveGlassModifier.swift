@@ -58,6 +58,39 @@ extension View {
         #endif
     }
 
+    /// Catalyst's navigation search field spans the window even when its list is narrow.
+    @ViewBuilder
+    func macReadableSearchable(text: Binding<String>, prompt: Text,
+                              maxWidth: CGFloat = AdaptiveReadableContentWidth.secondaryDestination) -> some View {
+        #if targetEnvironment(macCatalyst)
+        safeAreaInset(edge: .top, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField(text: text, prompt: prompt) { prompt }
+                    .textFieldStyle(.plain)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                if !text.wrappedValue.isEmpty {
+                    Button { text.wrappedValue = "" } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .adaptiveReadableContent(maxWidth: maxWidth)
+            .background(.bar)
+        }
+        #else
+        searchable(text: text, placement: .navigationBarDrawer(displayMode: .always), prompt: prompt)
+        #endif
+    }
+
     func adaptiveReadableContent(maxWidth: CGFloat) -> some View {
         modifier(AdaptiveReadableContentModifier(maxWidth: maxWidth))
     }

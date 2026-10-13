@@ -2356,6 +2356,7 @@ private struct ServerDetailView: View {
             .padding(.horizontal, 16)
             .padding(.top, 18)
             .padding(.bottom, 36)
+            .macReadableContent(maxWidth: AdaptiveReadableContentWidth.secondaryDestination)
         }
         .background(Color(.systemBackground))
         .navigationTitle(displayName.isEmpty ? hostFallback : displayName)
