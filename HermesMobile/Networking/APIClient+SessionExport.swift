@@ -166,10 +166,12 @@ struct WebuiScanListing: Decodable, Equatable {
         let activeStreamId: String?
         let isCliSession: Bool?
         let sessionSource: String?
+        let sourceTag: String?
+        let rawSource: String?
 
         enum CodingKeys: String, CodingKey {
             case sessionId, profile, title, messageCount, archived, pinned, workspace, isStreaming, activeStreamId
-            case isCliSession, sessionSource
+            case isCliSession, sessionSource, sourceTag, rawSource
         }
 
         /// The webui is streaming a reply into it now, so a Move must wait (#1218). Either field
@@ -180,7 +182,12 @@ struct WebuiScanListing: Decodable, Equatable {
         /// shows, not a webui chat, so a Move never counts, waits for or copies it (#1218). The
         /// webui sets `is_cli_session` from its own classifier, which keeps webui, cron, webhook
         /// and messaging rows out; Claude Code rows also carry `session_source: external_agent`.
-        var isExternal: Bool { isCliSession == true || sessionSource == "external_agent" }
+        /// A webui source marker wins over a stale CLI flag, as in the webui and the session list.
+        var isExternal: Bool {
+            let sources = [sessionSource, sourceTag, rawSource].map { $0?.trimmingCharacters(in: .whitespaces).lowercased() }
+            if sources.contains("webui") { return false }
+            return isCliSession == true || sources.contains("external_agent")
+        }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -195,6 +202,8 @@ struct WebuiScanListing: Decodable, Equatable {
             activeStreamId = try? c.decodeIfPresent(String.self, forKey: .activeStreamId)
             isCliSession = try? c.decodeIfPresent(Bool.self, forKey: .isCliSession)
             sessionSource = try? c.decodeIfPresent(String.self, forKey: .sessionSource)
+            sourceTag = try? c.decodeIfPresent(String.self, forKey: .sourceTag)
+            rawSource = try? c.decodeIfPresent(String.self, forKey: .rawSource)
         }
     }
 
