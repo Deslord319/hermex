@@ -164,14 +164,23 @@ struct WebuiScanListing: Decodable, Equatable {
         let workspace: String?
         let isStreaming: Bool?
         let activeStreamId: String?
+        let isCliSession: Bool?
+        let sessionSource: String?
 
         enum CodingKeys: String, CodingKey {
             case sessionId, profile, title, messageCount, archived, pinned, workspace, isStreaming, activeStreamId
+            case isCliSession, sessionSource
         }
 
         /// The webui is streaming a reply into it now, so a Move must wait (#1218). Either field
         /// counts, as in the session list (`SessionRowView.isActiveStreaming`).
         var isRunning: Bool { isStreaming == true || activeStreamId?.isEmpty == false }
+
+        /// A Hermes CLI/TUI session or an external agent's transcript (Claude Code) the webui only
+        /// shows, not a webui chat, so a Move never counts, waits for or copies it (#1218). The
+        /// webui sets `is_cli_session` from its own classifier, which keeps webui, cron, webhook
+        /// and messaging rows out; Claude Code rows also carry `session_source: external_agent`.
+        var isExternal: Bool { isCliSession == true || sessionSource == "external_agent" }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -184,9 +193,12 @@ struct WebuiScanListing: Decodable, Equatable {
             workspace = try? c.decodeIfPresent(String.self, forKey: .workspace)
             isStreaming = try? c.decodeIfPresent(Bool.self, forKey: .isStreaming)
             activeStreamId = try? c.decodeIfPresent(String.self, forKey: .activeStreamId)
+            isCliSession = try? c.decodeIfPresent(Bool.self, forKey: .isCliSession)
+            sessionSource = try? c.decodeIfPresent(String.self, forKey: .sessionSource)
         }
     }
 
+    /// The webui's own chats; external rows are dropped here, so no Move reader sees them.
     let sessions: [Row]
     let allProfiles: Bool?
     let activeProfile: String?
@@ -195,7 +207,7 @@ struct WebuiScanListing: Decodable, Equatable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        sessions = try c.decode([Slot].self, forKey: .sessions).compactMap(\.row).filter { !$0.sessionId.isEmpty }
+        sessions = try c.decode([Slot].self, forKey: .sessions).compactMap(\.row).filter { !$0.sessionId.isEmpty && !$0.isExternal }
         allProfiles = try? c.decodeIfPresent(Bool.self, forKey: .allProfiles)
         activeProfile = try? c.decodeIfPresent(String.self, forKey: .activeProfile)
     }

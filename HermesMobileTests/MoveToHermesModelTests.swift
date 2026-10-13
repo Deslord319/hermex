@@ -119,11 +119,13 @@ final class MoveToHermesModelTests: XCTestCase {
     }
 
     /// R4: chats the webui is streaming, by either field the session list reads, and this
-    /// iPhone's running Live Activities for it.
+    /// iPhone's running Live Activities for it. A running CLI session the webui shows isn't one.
     func testRunningChatsRefuseTheMove() async throws {
         var stream = row("streamID", profile: "default")
         stream["active_stream_id"] = .string("s1")
-        MoveWebuiFixture.rows = [row("busy", profile: "default", streaming: true), stream, row("idle", profile: "default")]
+        var cli = row("cli", profile: "default", streaming: true)
+        cli["is_cli_session"] = .bool(true)
+        MoveWebuiFixture.rows = [row("busy", profile: "default", streaming: true), stream, cli, row("idle", profile: "default")]
         liveActivities = ["other"]
         let model = makeModel()
 

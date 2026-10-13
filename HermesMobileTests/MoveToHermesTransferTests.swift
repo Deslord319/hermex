@@ -112,6 +112,30 @@ final class MoveToHermesTransferTests: XCTestCase {
         XCTAssertFalse(reads.contains { $0 == ("listed", "research") })
     }
 
+    /// With CLI and Claude Code rows shown, the scan keeps only the webui's own chats, cron and
+    /// webhook runs included: external rows aren't counted, read on Hermes or treated as running.
+    /// Row shapes follow the webui's `get_cli_sessions` and Claude Code rows at c67fd2dd.
+    func testScanSkipsCLIAndExternalAgentRows() async throws {
+        host.listed = ["default": []]
+        host.held = ["default": []]
+        MoveWebuiFixture.rows = [
+            ["session_id": .string("chat"), "session_source": .string("webui"), "is_cli_session": .bool(false)],
+            ["session_id": .string("cron_job_1"), "source_tag": .string("cron"), "is_cli_session": .bool(false)],
+            ["session_id": .string("hook"), "source_tag": .string("webhook"), "is_cli_session": .bool(false), "read_only": .bool(true)],
+            ["session_id": .string("cli"), "source_tag": .string("cli"), "is_cli_session": .bool(true), "active_stream_id": .string("s1")],
+            ["session_id": .string("claude_code_x"), "session_source": .string("external_agent"), "is_cli_session": .bool(true),
+             "read_only": .bool(true), "is_streaming": .bool(true)],
+            ["session_id": .string("agent_y"), "session_source": .string("external_agent")]
+        ]
+        let hermes = try await hermesClient()
+
+        let result = try await MoveToHermesScan.run(webui: webuiClient(), hermes: hermes, hermesProfiles: ["default"])
+
+        XCTAssertEqual(result.entries.map(\.chat.id), ["chat", "cron_job_1", "hook"])
+        XCTAssertEqual(result.running, [])
+        XCTAssertEqual(Set(HermesHostFixture.requests.compactMap { Self.rowRead($0)?.id }), ["chat", "cron_job_1", "hook"])
+    }
+
     /// At most four reads are in flight; cancelling leaves every unread id unknown and sends no more.
     func testScanSendsAtMostFourRequestsAtOnceAndCancelsToUnknown() async throws {
         host.listed = ["default": []]
