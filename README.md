@@ -107,6 +107,35 @@ xcrun simctl list devices available
 
 Local validation defaults for XcodeBuildMCP users live in `.xcodebuildmcp/config.yaml`; the standard post-change flow is in [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
+### Mac Catalyst
+
+The `HermesMobile` scheme also builds a native Mac Catalyst app. In Xcode,
+choose **My Mac (Mac Catalyst)**. For a compile-only check:
+
+```zsh
+xcodebuild -project HermesMobile.xcodeproj -scheme HermesMobile \
+  -destination 'platform=macOS,variant=Mac Catalyst' CODE_SIGNING_ALLOWED=NO build
+```
+
+For a runnable build, configure your own team and identifiers in the ignored
+`Config/Local.xcconfig` as described in [Contributing](CONTRIBUTING.md#code-signing-for-contributors),
+then build with signing enabled. The Mac bundle identifier adds `.mac` to
+`APP_BUNDLE_IDENTIFIER`; the Mac sandbox permits outbound connections, selected
+files, microphone, camera and photo-library access. Credentials remain in Keychain.
+
+The Mac uses the Mac-optimized interface idiom (native scale and controls),
+the existing two-column session navigation with a resizable sidebar
+and a minimum window size of 800 × 600 points. Keyboard commands include ⌘N
+(new chat), ⌘F (session search), ⌘1–9 (open a chat), ⌃Tab / ⌃⇧Tab
+(adjacent chats), and ⌘Return (send). Web links open in the default browser.
+
+Live Activities, alternate app icons, the iOS share extension and encrypted relay
+push notifications are unavailable in this initial Mac build. Local response
+completion alerts remain available while the app is running. API requests,
+Cookie authentication, SSE streams, drafts, cached sessions and server switching
+use the same implementation as iOS. The existing XCTest suite runs on iOS;
+Mac window and input behavior also need a signed Mac smoke test.
+
 ## Server compatibility
 
 The app is developed and tested against the `hermes-webui` commit pinned in [`UPSTREAM_TESTED_SHA`](UPSTREAM_TESTED_SHA). Upstream does not yet guarantee API stability (its README declares version skew unsupported pending their stable-API work), so newer or older server versions may break individual features — please include your server version in bug reports. The app decodes tolerantly (unknown fields never crash it) and endpoint shapes are verified against upstream source, never invented.

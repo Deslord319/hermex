@@ -24,6 +24,9 @@ import SwiftUI
     }
 
     var body: some View {
+        #if targetEnvironment(macCatalyst)
+        sharedSettings
+        #else
         DisclosureGroup(isExpanded: $isExpanded) {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Push · Current server")
@@ -95,6 +98,7 @@ import SwiftUI
         } message: {
             Text("Bot turns running on this host stop. Hermex reconnects when Hermes is back.")
         }
+        #endif
     }
 
     @ViewBuilder private var pushSettings: some View {

@@ -216,6 +216,7 @@ struct SettingsView: View {
                             if let notificationStatusText {
                                 SettingsFootnote(notificationStatusText)
                             }
+                            #if !targetEnvironment(macCatalyst)
                             SettingsDivider()
                             SettingsToggleRow(
                                 title: String(localized: "Live Activity Excerpts"),
@@ -223,6 +224,7 @@ struct SettingsView: View {
                                 isOn: $showsLiveActivityResponseExcerpts
                             )
                             SettingsFootnote(String(localized: "Shows short response text on the Lock Screen and Dynamic Island."))
+                            #endif
                         }
                         .id(server)
                     }

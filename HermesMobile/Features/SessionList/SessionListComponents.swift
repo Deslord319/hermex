@@ -15,6 +15,9 @@ struct SessionSplitView<Sidebar: View, Detail: View>: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
+                #if targetEnvironment(macCatalyst)
+                .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
+                #endif
         } detail: {
             NavigationStack {
                 detail
