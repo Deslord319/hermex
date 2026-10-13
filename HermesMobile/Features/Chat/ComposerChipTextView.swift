@@ -567,6 +567,12 @@ final class ComposerChipTextView: UITextView, UIGestureRecognizerDelegate {
         )
         returnCommand.wantsPriorityOverSystemBehavior = true
         sendCommands.append(returnCommand)
+        let newlineCommand = UIKeyCommand(
+            input: ComposerKeyboardCommand.input, modifierFlags: .shift,
+            action: #selector(insertNewlineFromKeyboard)
+        )
+        newlineCommand.wantsPriorityOverSystemBehavior = true
+        sendCommands.append(newlineCommand)
         #endif
         guard recallLastSentText != nil else {
             return (super.keyCommands ?? []) + sendCommands
@@ -595,6 +601,9 @@ final class ComposerChipTextView: UITextView, UIGestureRecognizerDelegate {
         }
 
         #if targetEnvironment(macCatalyst)
+        if action == #selector(insertNewlineFromKeyboard) {
+            return isEditable && markedTextRange == nil
+        }
         if action == #selector(sendMessageFromReturnKey) {
             return ComposerKeyboardSendPolicy.canSend(
                 isEnabled: isKeyboardSendEnabled, hasMarkedText: markedTextRange != nil,
@@ -628,6 +637,11 @@ final class ComposerChipTextView: UITextView, UIGestureRecognizerDelegate {
     }
 
     #if targetEnvironment(macCatalyst)
+    @objc private func insertNewlineFromKeyboard() {
+        guard canPerformAction(#selector(insertNewlineFromKeyboard), withSender: nil) else { return }
+        insertText("\n")
+    }
+
     @objc private func sendMessageFromReturnKey() {
         guard canPerformAction(#selector(sendMessageFromReturnKey), withSender: nil) else { return }
         onKeyboardSend()

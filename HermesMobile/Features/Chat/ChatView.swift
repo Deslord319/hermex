@@ -967,6 +967,11 @@ struct ChatView: View {
 
                 approvalOverlay
             }
+            #if targetEnvironment(macCatalyst)
+            // Empty transcript placeholders have intrinsic size; keep their composer
+            // anchored to the full viewport just like a populated ScrollView.
+            .frame(width: viewport.size.width, height: viewport.size.height)
+            #endif
         }
         .overlay(alignment: .top) {
             GitActionToastOverlay(state: gitToastState)

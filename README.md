@@ -131,7 +131,11 @@ forms,
 the existing two-column session navigation with a resizable sidebar
 and a minimum window size of 800 × 600 points. Keyboard commands include ⌘N
 (new chat), ⌘F (session search), ⌘1–9 (open a chat), ⌃Tab / ⌃⇧Tab
-(adjacent chats), and ⌘Return (send). Web links open in the default browser.
+(adjacent chats), and Return or ⌘Return (send). Shift-Return inserts a newline;
+active input-method composition is left to the editor. The Mac composer keeps
+its editor and controls in one surface with room above the window edge. The file
+browser keeps search above its content, including empty and loading states.
+Web links open in the default browser.
 
 Live Activities, alternate app icons, the iOS share extension and encrypted relay
 push notifications are unavailable in this initial Mac build. Local response
