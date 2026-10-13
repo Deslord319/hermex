@@ -973,7 +973,7 @@ struct ChatView: View {
             #if targetEnvironment(macCatalyst)
             // Empty transcript placeholders have intrinsic size; keep their composer
             // anchored to the full viewport just like a populated ScrollView.
-            .frame(width: viewport.size.width, height: viewport.size.height)
+            .frame(width: viewport.size.width, height: viewport.size.height, alignment: .bottom)
             #endif
         }
         .overlay(alignment: .top) {
