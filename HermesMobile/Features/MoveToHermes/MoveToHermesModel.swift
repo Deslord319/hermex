@@ -352,7 +352,8 @@ enum MoveToHermesEntry: Equatable {
         runPass(checksRunning: true) { await $0.start(frozen) }
     }
 
-    /// Another pass; R4 again if a chat started running while the move was paused.
+    /// Another pass; R4 again if a chat started running while the move was paused. Only a pass
+    /// with chats left to copy reads the webui: titles, pins, folders and drafts don't need it.
     func resume() { runPass(checksRunning: true) { await $0.resume() } }
 
     /// Try Again after the webui's list couldn't be read before a pass.
@@ -409,15 +410,17 @@ enum MoveToHermesEntry: Equatable {
     }
 
     /// Runs one runner call as the sheet's task, marked running for the card, then shows the
-    /// runner's state with the counts a pause shows. With `checksRunning`, a chat the webui is
-    /// streaming now stops it before anything is sent (R4): a scan or pause can be minutes old.
+    /// runner's state with the counts a pause shows. With `checksRunning`, a pass with chats left
+    /// to copy first reads the webui's list again (a scan or pause can be minutes old): a chat
+    /// streaming now (R4), or a list that can't be read, stops it before anything is sent.
     private func runPass(checksRunning: Bool = false, _ call: @escaping @MainActor (MoveToHermesRunner) async -> Void) {
         guard let runner, let destinationID else { return }
         let notices = environment.notices()
         phase = .progress(nil)
         notices.setRunning(true, source: sourceID, destination: destinationID)
         perform { [self] in
-            if checksRunning {
+            // Unknown work left (an unreadable journal) checks too.
+            if checksRunning, await runner.snapshot()?.copyLeft ?? 1 > 0 {
                 checkedPass = call
                 let running = await runningChats()
                 if running?.isEmpty != true {

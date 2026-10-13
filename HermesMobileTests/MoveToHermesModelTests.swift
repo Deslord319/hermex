@@ -259,6 +259,9 @@ final class MoveToHermesModelTests: XCTestCase {
         XCTAssertTrue(model.wasClosed)
         XCTAssertEqual(model.snapshot?.total, 2)
         XCTAssertEqual(model.snapshot?.unplanned, 2, "Copied chats whose titles, pins, folders and drafts wait for Resume")
+        XCTAssertEqual(model.snapshot?.copyLeft, 0)
+        // With nothing left to copy, Resume finishes on Hermes even while the webui is unreachable.
+        MoveWebuiFixture.listingFailure = 503
 
         model.resume()
         await model.settled()
