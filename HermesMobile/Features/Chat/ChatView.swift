@@ -948,6 +948,10 @@ struct ChatView: View {
                     listenPlaybackBar
 
                     messageContent
+                        #if targetEnvironment(macCatalyst)
+                        // Empty and error placeholders must fill the transcript area too.
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        #endif
                         // Scope RTL to the chat transcript only (#259): the offline
                         // banner above stays in the app's default direction.
                         .environment(\.layoutDirection, chatLayoutDirection)
