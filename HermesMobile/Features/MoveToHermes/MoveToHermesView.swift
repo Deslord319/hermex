@@ -355,10 +355,13 @@ struct MoveToHermesSheet: View {
                             ? String(localized: "\(snapshot.inHermes) of \(snapshot.total) in \(destination). \(snapshot.copyLeft) still to try.")
                             : String(localized: "\(snapshot.inHermes) of \(snapshot.total) in \(destination)."))
                     MoveToHermesStep(
-                        state: snapshot.changesLeft > 0 ? .attention : .done, title: String(localized: "Titles, pins and folders"),
-                        detail: snapshot.changesLeft > 0
-                            ? String(localized: "\(report.changesApplied) applied. \(snapshot.changesLeft) still to send.")
-                            : String(localized: "\(report.changesApplied) applied."))
+                        state: snapshot.changesLeft + snapshot.unplanned > 0 ? .attention : .done,
+                        title: String(localized: "Titles, pins and folders"),
+                        detail: [snapshot.changesLeft > 0
+                                    ? String(localized: "\(report.changesApplied) applied. \(snapshot.changesLeft) still to send.")
+                                    : String(localized: "\(report.changesApplied) applied."),
+                                 snapshot.unplanned > 0 ? String(localized: "\(snapshot.unplanned) chats still to check.") : nil]
+                            .compactMap { $0 }.joined(separator: " "))
                     MoveToHermesStep(
                         state: snapshot.draftsLeft > 0 ? .attention : .done, title: String(localized: "Moving drafts"),
                         detail: snapshot.draftsLeft > 0
@@ -424,6 +427,9 @@ struct MoveToHermesSheet: View {
         if !report.draftsKept.isEmpty { sentences.append(String(localized: "\(report.draftsKept.count) drafts stay on this iPhone under \(source).")) }
         if !report.changesNotApplied.isEmpty {
             sentences.append(String(localized: "\(report.changesNotApplied.count) titles, pins or folders won’t be applied."))
+        }
+        if !report.notReconciled.isEmpty {
+            sentences.append(String(localized: "\(report.notReconciled.count) chats weren’t checked for titles, pins, folders or drafts."))
         }
         if !report.sentUnconfirmed.isEmpty {
             sentences.append(String(localized: "\(report.sentUnconfirmed.count) chats were sent without a reply, so they may or may not be in \(destination). They’re listed for you to check."))
@@ -534,6 +540,10 @@ private struct MoveToHermesReportView: View {
                 if notApplied > 0 {
                     MoveToHermesStep(state: .attention, title: String(localized: "\(notApplied) titles, pins or folders not applied"))
                 }
+                if !report.notReconciled.isEmpty {
+                    MoveToHermesStep(state: .attention,
+                                     title: String(localized: "\(report.notReconciled.count) chats weren’t checked for titles, pins, folders or drafts."))
+                }
                 if !report.changesUnconfirmed.isEmpty {
                     MoveToHermesStep(state: .attention, title: String(localized: "\(report.changesUnconfirmed.count) changes couldn’t be confirmed"),
                                      detail: String(localized: "\(changeList(report.changesUnconfirmed)). Check them in \(destination)."))
@@ -552,7 +562,7 @@ private struct MoveToHermesReportView: View {
                 }
             }
             Section {
-                if canCopyAgain, report.notCopied.count + report.unchecked.count + report.sentUnconfirmed.count > 0 {
+                if canCopyAgain, report.notCopied.count + report.rejected.count + report.unchecked.count + report.sentUnconfirmed.count > 0 {
                     Button("Copy Missing Chats Again", action: copyAgain)
                 }
                 Button(String(localized: "Open \(destination)"), action: open).fontWeight(.semibold)
@@ -730,14 +740,17 @@ struct MoveToHermesBanner: View {
     @State private var isConfirmingRemove = false
     private let notices = MoveToHermesNotices.shared
 
+    /// The banner a sheet opened from: the row stays while its sheet is up, though a running
+    /// move has no banner of its own, so the sheet isn't torn down with it.
     private struct Request: Identifiable {
-        let sourceID: String
+        let notice: MoveToHermesNotice
         let entry: MoveToHermesEntry
+        var sourceID: String { notice.sourceID }
         var id: String { "\(sourceID)\(entry)" }
     }
 
     var body: some View {
-        if let notice = notices.banner(for: serverID, in: auth.servers) {
+        if let notice = notices.banner(for: serverID, in: auth.servers) ?? request?.notice {
             banner(notice)
                 .sheet(item: $request) { MoveToHermesSheet(auth: auth, sourceID: $0.sourceID, entry: $0.entry) }
                 .alert(String(localized: "Remove \(sourceName(notice))?"), isPresented: $isConfirmingRemove) {
@@ -780,14 +793,14 @@ struct MoveToHermesBanner: View {
             HStack(spacing: 18) {
                 switch notice.stage {
                 case .paused(let canResume):
-                    if canResume { Button("Resume") { request = Request(sourceID: notice.sourceID, entry: .resume) } }
-                    Button("Details") { request = Request(sourceID: notice.sourceID, entry: .details) }
+                    if canResume { Button("Resume") { request = Request(notice: notice, entry: .resume) } }
+                    Button("Details") { request = Request(notice: notice, entry: .details) }
                 case .finished:
-                    Button("See Report") { request = Request(sourceID: notice.sourceID, entry: .details) }
+                    Button("See Report") { request = Request(notice: notice, entry: .details) }
                 case .moved, .running:
                     Button(String(localized: "Open \(destination)")) { auth.switchActiveServer(to: notice.destination) }
                     Menu("More…") {
-                        Button("Copy Missing Chats Again") { request = Request(sourceID: notice.sourceID, entry: .copyMissingAgain) }
+                        Button("Copy Missing Chats Again") { request = Request(notice: notice, entry: .copyMissingAgain) }
                         Button("Remove This Server", role: .destructive) { isConfirmingRemove = true }
                     }
                 }

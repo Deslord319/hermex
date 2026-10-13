@@ -144,7 +144,7 @@ enum MoveToHermesScan {
         }
         return Result(entries: chats.map { Entry(chat: $0, location: locations[$0.id] ?? .unknown) },
                       onlyProfile: listing.allProfiles == true ? nil : listing.activeProfile,
-                      running: listing.sessions.filter { $0.isStreaming == true }.map(\.sessionId))
+                      running: listing.sessions.filter(\.isRunning).map(\.sessionId))
     }
 
     /// Every id each Profile lists, or nil for a Profile whose listing failed, so its ids are

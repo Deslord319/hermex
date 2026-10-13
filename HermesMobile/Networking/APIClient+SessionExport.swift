@@ -162,10 +162,16 @@ struct WebuiScanListing: Decodable, Equatable {
         let archived: Bool?
         let pinned: Bool?
         let workspace: String?
-        /// The webui is streaming a reply into it now, so a Move must wait (#1218).
         let isStreaming: Bool?
+        let activeStreamId: String?
 
-        enum CodingKeys: String, CodingKey { case sessionId, profile, title, messageCount, archived, pinned, workspace, isStreaming }
+        enum CodingKeys: String, CodingKey {
+            case sessionId, profile, title, messageCount, archived, pinned, workspace, isStreaming, activeStreamId
+        }
+
+        /// The webui is streaming a reply into it now, so a Move must wait (#1218). Either field
+        /// counts, as in the session list (`SessionRowView.isActiveStreaming`).
+        var isRunning: Bool { isStreaming == true || activeStreamId?.isEmpty == false }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -177,6 +183,7 @@ struct WebuiScanListing: Decodable, Equatable {
             pinned = try? c.decodeIfPresent(Bool.self, forKey: .pinned)
             workspace = try? c.decodeIfPresent(String.self, forKey: .workspace)
             isStreaming = try? c.decodeIfPresent(Bool.self, forKey: .isStreaming)
+            activeStreamId = try? c.decodeIfPresent(String.self, forKey: .activeStreamId)
         }
     }
 

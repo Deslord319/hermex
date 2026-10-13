@@ -237,11 +237,7 @@ enum MoveToHermesEntry: Equatable {
             checking.hostError = String(localized: "Couldn’t read \(destinationName)’s Profiles. Try again.")
             return
         }
-        // The webui server's own headers and sign-in, never the active server's.
-        let headers = [CustomHeader].decodeFromStorage(try? auth.keychain.load(.customHeaders, scope: sourceID))
-        let (client, session) = APIClient.moveCopyClient(baseURL: sourceURL, headers: headers,
-                                                         cookies: environment.runner.cookies(sourceURL),
-                                                         configuration: environment.runner.webuiConfiguration)
+        let (client, session) = webuiClient(sourceURL)
         defer { session.invalidateAndCancel() }
         let result: MoveToHermesScan.Result
         do {
@@ -270,6 +266,24 @@ enum MoveToHermesEntry: Equatable {
                              scan: result, drafted: drafted, record: record)
         mapping = Self.initialMapping(profiles: review?.profiles ?? [], record: record)
         phase = .review
+    }
+
+    /// A read-only client on the webui server's own headers and sign-in, never the active server's.
+    private func webuiClient(_ sourceURL: URL) -> (client: APIClient, session: URLSession) {
+        let headers = [CustomHeader].decodeFromStorage(try? auth.keychain.load(.customHeaders, scope: sourceID))
+        return APIClient.moveCopyClient(baseURL: sourceURL, headers: headers, cookies: environment.runner.cookies(sourceURL),
+                                        configuration: environment.runner.webuiConfiguration)
+    }
+
+    /// The webui's running chats now, with this iPhone's running Live Activities for it, read
+    /// again just before a pass copies anything. Nil when the list can't be read: the copy's own
+    /// exports then fail the same way.
+    private func runningChats() async -> Set<String>? {
+        guard let sourceURL, source != nil else { return nil }
+        let (client, session) = webuiClient(sourceURL)
+        defer { session.invalidateAndCancel() }
+        guard let listing = try? await client.moveScanSessions() else { return nil }
+        return Set(listing.sessions.filter(\.isRunning).map(\.sessionId)).union(environment.liveActivitySessions(sourceURL))
     }
 
     /// Review's Profiles: every webui Profile its list or the scan names, with its chat count.
@@ -331,10 +345,11 @@ enum MoveToHermesEntry: Equatable {
             source: source, connection: review.connection,
             profiles: review.profiles.compactMap { choice in mapping[choice.source].map { MovedWebuiProfile(source: choice.source, destination: $0) } },
             hermesProfiles: review.hermesProfiles, scan: review.scan)
-        runPass { await $0.start(frozen) }
+        runPass(checksRunning: true) { await $0.start(frozen) }
     }
 
-    func resume() { runPass { await $0.resume() } }
+    /// Another pass; R4 again if a chat started running while the move was paused.
+    func resume() { runPass(checksRunning: true) { await $0.resume() } }
 
     /// Finish with What's Done: sends nothing, then shows the report.
     func finishEarly() { runPass { await $0.finishEarly() } }
@@ -384,13 +399,19 @@ enum MoveToHermesEntry: Equatable {
     }
 
     /// Runs one runner call as the sheet's task, marked running for the card, then shows the
-    /// runner's state with the counts a pause shows.
-    private func runPass(_ call: @escaping @MainActor (MoveToHermesRunner) async -> Void) {
+    /// runner's state with the counts a pause shows. With `checksRunning`, a chat the webui is
+    /// streaming now stops it before anything is sent (R4): a scan or pause can be minutes old.
+    private func runPass(checksRunning: Bool = false, _ call: @escaping @MainActor (MoveToHermesRunner) async -> Void) {
         guard let runner, let destinationID else { return }
         let notices = environment.notices()
         phase = .progress(nil)
         notices.setRunning(true, source: sourceID, destination: destinationID)
         perform { [self] in
+            if checksRunning, let running = await runningChats(), !running.isEmpty {
+                notices.setRunning(false, source: sourceID, destination: destinationID)
+                guard !Task.isCancelled else { return }
+                return phase = .refused(.running(running.count))
+            }
             await call(runner)
             notices.setRunning(false, source: sourceID, destination: destinationID)
             guard !Task.isCancelled else { return refreshNotices() }

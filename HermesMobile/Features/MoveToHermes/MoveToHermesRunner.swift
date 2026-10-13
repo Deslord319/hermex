@@ -489,6 +489,8 @@ struct MoveToHermesProgress {
         let copyLeft: Int
         let changesLeft: Int
         let draftsLeft: Int
+        /// Chats in Hermes whose titles, pins, folders and drafts aren't planned yet.
+        let unplanned: Int
 
         /// Chats in Hermes, whether this move copied them or not.
         var inHermes: Int { report.copied.count + report.alreadyThere.count + report.presentUnconfirmed.count }
@@ -510,7 +512,8 @@ struct MoveToHermesProgress {
         let waiting = await draftsWaiting(progress)
         let report = opened.finishedReport ?? progress.report(finishedEarly: false, draftsWaiting: waiting)
         return Snapshot(report: report, total: opened.review.entries.count, copyLeft: progress.copyItems.count,
-                        changesLeft: progress.operationsToApply.count, draftsLeft: waiting.count)
+                        changesLeft: progress.operationsToApply.count, draftsLeft: waiting.count,
+                        unplanned: progress.unplannedTargets.count)
     }
 
     /// The journal, read from disk unless this runner holds it, or nil with `state` saying why.

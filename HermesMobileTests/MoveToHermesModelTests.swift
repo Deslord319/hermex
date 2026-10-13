@@ -118,16 +118,39 @@ final class MoveToHermesModelTests: XCTestCase {
         XCTAssertTrue(MoveWebuiFixture.requests.isEmpty, "A refused host stops before the webui is read")
     }
 
-    /// R4: chats the webui is streaming, and this iPhone's running Live Activities for it.
+    /// R4: chats the webui is streaming, by either field the session list reads, and this
+    /// iPhone's running Live Activities for it.
     func testRunningChatsRefuseTheMove() async throws {
-        MoveWebuiFixture.rows = [row("busy", profile: "default", streaming: true), row("idle", profile: "default")]
+        var stream = row("streamID", profile: "default")
+        stream["active_stream_id"] = .string("s1")
+        MoveWebuiFixture.rows = [row("busy", profile: "default", streaming: true), stream, row("idle", profile: "default")]
         liveActivities = ["other"]
         let model = makeModel()
 
         model.open(.start)
         await model.settled()
 
-        XCTAssertEqual(model.screen, .refused(.running(2)))
+        XCTAssertEqual(model.screen, .refused(.running(3)))
+    }
+
+    /// A chat that starts running while Review is open stops Move before the commit.
+    func testMoveChecksRunningChatsAgainBeforeSending() async throws {
+        MoveWebuiFixture.rows = [row("new", profile: "default")]
+        MoveWebuiFixture.exports = ["new": exportData("new")]
+        let model = makeModel()
+        model.open(.start)
+        await model.settled()
+        XCTAssertEqual(model.screen, .review)
+        MoveWebuiFixture.rows = [row("new", profile: "default", streaming: true)]
+
+        model.move()
+        await model.settled()
+
+        XCTAssertEqual(model.screen, .refused(.running(1)))
+        XCTAssertNil(auth.moveRecord(forSource: webui.absoluteString), "Nothing is committed")
+        XCTAssertTrue(host.imports.isEmpty)
+        XCTAssertEqual(pairingReads, 0)
+        XCTAssertTrue(notices.running.isEmpty)
     }
 
     /// Without a saved Hermes sign-in, D asks; a signed-in Hermes server is offered, never matched silently.
@@ -222,6 +245,7 @@ final class MoveToHermesModelTests: XCTestCase {
         XCTAssertEqual(model.screen, .paused(.workLeft))
         XCTAssertTrue(model.wasClosed)
         XCTAssertEqual(model.snapshot?.total, 2)
+        XCTAssertEqual(model.snapshot?.unplanned, 2, "Copied chats whose titles, pins, folders and drafts wait for Resume")
 
         model.resume()
         await model.settled()
