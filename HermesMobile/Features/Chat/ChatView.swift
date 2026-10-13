@@ -954,7 +954,9 @@ struct ChatView: View {
                 }
                 .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.showsListenPlaybackBar)
 
+                #if !targetEnvironment(macCatalyst)
                 BottomComposerMaterialFade(composerHeight: composerHeight)
+                #endif
 
                 composerAccessoryStack
 
