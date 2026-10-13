@@ -964,6 +964,9 @@ struct ChatView: View {
 
                 messageComposer
                     .frame(maxWidth: composerMaximumWidth)
+                    #if targetEnvironment(macCatalyst)
+                    .fixedSize(horizontal: false, vertical: true)
+                    #endif
 
                 approvalOverlay
             }

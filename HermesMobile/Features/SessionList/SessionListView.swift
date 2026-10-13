@@ -852,6 +852,19 @@ struct SessionListView: View {
         HapticButton(feedbackStyle: .medium) {
             openNewChat()
         } label: {
+            #if targetEnvironment(macCatalyst)
+            Label("Chat", systemImage: "square.and.pencil")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(newSessionButtonForegroundColor)
+                .padding(.horizontal, 14)
+                .frame(height: 34)
+                .contentShape(Capsule())
+                .background {
+                    if let fill = newSessionButtonSolidThemeFill { Capsule().fill(fill) }
+                }
+                .sessionsChromeGlass(isInteractive: true, tint: newSessionButtonGlassTint,
+                                    fallbackMaterial: .regularMaterial, in: Capsule())
+            #else
             HStack(spacing: 10) {
                 Image(systemName: "square.and.pencil")
                     .font(.title3.weight(.semibold))
@@ -877,6 +890,7 @@ struct SessionListView: View {
                 fallbackMaterial: .regularMaterial,
                 in: Capsule()
             )
+            #endif
         }
         .buttonStyle(SessionListFloatingChatButtonStyle())
         .disabled(viewModel.isViewingCachedData || navigationState.isCreatingNewChat)

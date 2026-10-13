@@ -9,7 +9,11 @@ struct SessionSplitView<Sidebar: View, Detail: View>: View {
     let rootRevision: Int
     @ViewBuilder let sidebar: Sidebar
     @ViewBuilder let detail: Detail
+    #if targetEnvironment(macCatalyst)
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    #else
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    #endif
     @State private var detailColumn = DetailColumnNavigation()
 
     var body: some View {
@@ -26,8 +30,15 @@ struct SessionSplitView<Sidebar: View, Detail: View>: View {
             .id(rootRevision)
         }
         .navigationSplitViewStyle(.balanced)
+        #if targetEnvironment(macCatalyst)
+        .environment(\.horizontalSizeClass, .regular)
+        #endif
         .onChange(of: rootRevision) {
+            #if targetEnvironment(macCatalyst)
+            if columnVisibility != .detailOnly { columnVisibility = .all }
+            #else
             columnVisibility = columnVisibility.afterRootSelection
+            #endif
             detailColumn.popToRoot()
         }
     }
