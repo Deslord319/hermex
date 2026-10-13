@@ -62,7 +62,7 @@ struct CustomHeadersEditor: View {
             HStack(spacing: 8) {
                 field {
                     TextField("Header name", text: header.name,
-                              prompt: Text("Header name").foregroundStyle(style.secondaryText))
+                              prompt: fieldPrompt("Header name"))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .foregroundStyle(style.primaryText)
@@ -82,11 +82,19 @@ struct CustomHeadersEditor: View {
 
             field {
                 SecureField("Value", text: header.value,
-                            prompt: Text("Value").foregroundStyle(style.secondaryText))
+                            prompt: fieldPrompt("Value"))
                     .foregroundStyle(style.primaryText)
                     .accessibilityLabel("Header value")
             }
         }
+    }
+
+    private func fieldPrompt(_ title: LocalizedStringKey) -> Text? {
+        #if targetEnvironment(macCatalyst)
+        Text(title).foregroundStyle(style.secondaryText)
+        #else
+        nil
+        #endif
     }
 
     private func field<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
