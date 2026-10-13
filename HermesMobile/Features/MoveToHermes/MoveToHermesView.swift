@@ -623,24 +623,25 @@ private struct MoveToHermesReportView: View {
 
     /// Up to three chats by title, so the user knows which to check.
     private func titles(_ ids: [String]) -> String {
-        Self.shortList(ids.map { "“\(report.titles[$0] ?? $0)”" })
+        Self.shortList(ids) { "“\(report.titles[$0] ?? $0)”" }
     }
 
-    /// Three items joined naturally, or the first three and how many more.
-    private static func shortList(_ items: [String]) -> String {
-        guard items.count > 3 else { return ListFormatter.localizedString(byJoining: items) }
-        return String(localized: "\(items.prefix(3).joined(separator: ", ")) and \(items.count - 3) more")
+    /// Three items joined naturally, or the first three and how many more. Formats only those shown.
+    private static func shortList<Item>(_ items: [Item], _ format: (Item) -> String) -> String {
+        let shown = items.prefix(3).map(format)
+        guard items.count > 3 else { return ListFormatter.localizedString(byJoining: shown) }
+        return String(localized: "\(shown.joined(separator: ", ")) and \(items.count - 3) more")
     }
 
     private func changeList(_ operations: [MoveToHermesReconcile.Operation]) -> String {
-        Self.shortList(operations.map { operation in
+        Self.shortList(operations) { operation in
             let title = report.titles[operation.id] ?? operation.id
             return switch operation.change {
             case .title: String(localized: "Title on “\(title)”")
             case .pinned: String(localized: "Pin on “\(title)”")
             case .folder: String(localized: "Folder on “\(title)”")
             }
-        })
+        }
     }
 }
 
