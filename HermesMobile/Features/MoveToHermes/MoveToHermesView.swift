@@ -177,6 +177,13 @@ struct MoveToHermesSheet: View {
                 message: String(localized: "\(destination) runs \(version). Moving needs \(HermesCompatibility.minimumVersion) or later. \(source) keeps working as it is.")) {
                 Button("OK") { dismiss() }.buttonStyle(.borderedProminent)
             }
+        case .sourceUnreadable:
+            MoveToHermesNoticeScreen(
+                tint: .orange, title: String(localized: "Couldn’t read \(source)’s chats"),
+                message: String(localized: "\(source) didn’t answer. Check that it’s running and that you’re signed in.")) {
+                Button("Try Again") { model.retryCheckedPass() }.buttonStyle(.borderedProminent)
+                Button("Close") { dismiss() }.buttonStyle(.bordered)
+            }
         case .running(let count):
             MoveToHermesNoticeScreen(
                 tint: .orange, title: String(localized: "Wait for running chats"),

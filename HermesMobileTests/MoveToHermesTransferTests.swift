@@ -440,6 +440,8 @@ final class MoveWebuiFixture: URLProtocol {
     private static let lock = NSLock()
     nonisolated(unsafe) static var rows: [[String: BotJSON]] = []
     nonisolated(unsafe) static var allProfiles = true
+    /// When set, the scan listing answers this status with no body.
+    nonisolated(unsafe) static var listingFailure: Int?
     nonisolated(unsafe) static var exports: [String: Data] = [:]
     /// Switch replies by Profile name, ahead of the ordinary `{"active": <name>}`.
     nonisolated(unsafe) static var switchReplies: [String: String] = [:]
@@ -448,7 +450,7 @@ final class MoveWebuiFixture: URLProtocol {
     static var requests: [URLRequest] { lock.withLock { log } }
 
     static func reset() {
-        lock.withLock { rows = []; allProfiles = true; exports = [:]; switchReplies = [:]; log = [] }
+        lock.withLock { rows = []; allProfiles = true; listingFailure = nil; exports = [:]; switchReplies = [:]; log = [] }
     }
 
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "webui.example" }
@@ -462,6 +464,7 @@ final class MoveWebuiFixture: URLProtocol {
             Self.log.append(request)
             switch url.path {
             case "/api/sessions":
+                if let failure = Self.listingFailure { return (failure, Data()) }
                 let reply = BotJSON.object(["sessions": .array(Self.rows.map(BotJSON.object)), "all_profiles": .bool(Self.allProfiles),
                                             "active_profile": .string("research")])
                 return (200, try! JSONEncoder().encode(reply))

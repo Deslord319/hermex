@@ -27,6 +27,8 @@ enum MoveToHermesEntry: Equatable {
         case outdated(String)
         /// R4: this many of the webui server's chats are streaming a reply.
         case running(Int)
+        /// The webui's list couldn't be read just before a pass, so running chats are unknown.
+        case sourceUnreadable
     }
 
     /// What the sheet shows.
@@ -114,6 +116,8 @@ enum MoveToHermesEntry: Equatable {
     @ObservationIgnored private let environment: Environment
     @ObservationIgnored private var connection: BotConnection?
     @ObservationIgnored private var work: Task<Void, Never>?
+    /// The pass a running check stopped, for Try Again.
+    @ObservationIgnored private var checkedPass: (@MainActor (MoveToHermesRunner) async -> Void)?
 
     init(auth: AuthManager, sourceID: String, environment: Environment = Environment()) {
         self.auth = auth
@@ -276,10 +280,10 @@ enum MoveToHermesEntry: Equatable {
     }
 
     /// The webui's running chats now, with this iPhone's running Live Activities for it, read
-    /// again just before a pass copies anything. Nil when the list can't be read: the copy's own
-    /// exports then fail the same way.
+    /// again just before a pass copies anything. Nil when the list can't be read, which is
+    /// unknown, never "none". Empty once the webui server is gone: nothing more is copied.
     private func runningChats() async -> Set<String>? {
-        guard let sourceURL, source != nil else { return nil }
+        guard let sourceURL, source != nil else { return [] }
         let (client, session) = webuiClient(sourceURL)
         defer { session.invalidateAndCancel() }
         guard let listing = try? await client.moveScanSessions() else { return nil }
@@ -351,6 +355,12 @@ enum MoveToHermesEntry: Equatable {
     /// Another pass; R4 again if a chat started running while the move was paused.
     func resume() { runPass(checksRunning: true) { await $0.resume() } }
 
+    /// Try Again after the webui's list couldn't be read before a pass.
+    func retryCheckedPass() {
+        guard let checkedPass else { return }
+        runPass(checksRunning: true, checkedPass)
+    }
+
     /// Finish with What's Done: sends nothing, then shows the report.
     func finishEarly() { runPass { await $0.finishEarly() } }
 
@@ -407,10 +417,14 @@ enum MoveToHermesEntry: Equatable {
         phase = .progress(nil)
         notices.setRunning(true, source: sourceID, destination: destinationID)
         perform { [self] in
-            if checksRunning, let running = await runningChats(), !running.isEmpty {
-                notices.setRunning(false, source: sourceID, destination: destinationID)
-                guard !Task.isCancelled else { return }
-                return phase = .refused(.running(running.count))
+            if checksRunning {
+                checkedPass = call
+                let running = await runningChats()
+                if running?.isEmpty != true {
+                    notices.setRunning(false, source: sourceID, destination: destinationID)
+                    guard !Task.isCancelled else { return }
+                    return phase = .refused(running.map { .running($0.count) } ?? .sourceUnreadable)
+                }
             }
             await call(runner)
             notices.setRunning(false, source: sourceID, destination: destinationID)

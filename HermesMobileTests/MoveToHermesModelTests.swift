@@ -151,6 +151,19 @@ final class MoveToHermesModelTests: XCTestCase {
         XCTAssertTrue(host.imports.isEmpty)
         XCTAssertEqual(pairingReads, 0)
         XCTAssertTrue(notices.running.isEmpty)
+
+        // A list that can't be read is unknown, never "nothing running".
+        MoveWebuiFixture.rows = [row("new", profile: "default")]
+        MoveWebuiFixture.listingFailure = 503
+        model.retryCheckedPass()
+        await model.settled()
+        XCTAssertEqual(model.screen, .refused(.sourceUnreadable))
+        XCTAssertNil(auth.moveRecord(forSource: webui.absoluteString))
+
+        MoveWebuiFixture.listingFailure = nil
+        model.retryCheckedPass()
+        await model.settled()
+        guard case .finished = model.screen else { return XCTFail("Try Again runs the same pass, got \(model.screen)") }
     }
 
     /// Without a saved Hermes sign-in, D asks; a signed-in Hermes server is offered, never matched silently.
