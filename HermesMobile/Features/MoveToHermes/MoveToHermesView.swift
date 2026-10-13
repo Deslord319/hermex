@@ -110,7 +110,7 @@ struct MoveToHermesSheet: View {
                 ForEach(model.hostChoices) { server in
                     Button { model.choose(server) } label: {
                         MoveToHermesRow(title: MoveToHermesModel.name(server),
-                                        detail: String(localized: "\(URL(string: server.urlString)?.host ?? server.urlString) · added"),
+                                        detail: String(localized: "\(Self.hostAndPort(server.urlString)) · added"),
                                         chevron: true)
                     }
                 }
@@ -120,6 +120,12 @@ struct MoveToHermesSheet: View {
                 }
             }
         }
+    }
+
+    /// A host as D lists it: with its port, so two hosts on one machine read apart.
+    private static func hostAndPort(_ address: String) -> String {
+        guard let url = URL(string: address), let host = url.host else { return address }
+        return url.port.map { "\(host):\($0)" } ?? host
     }
 
     // MARK: A1b
@@ -293,8 +299,9 @@ struct MoveToHermesSheet: View {
         let copied = model.runner?.copyProgress
         return List {
             Section {
-                MoveToHermesStep(state: index >= 0 ? .done : .current(1), title: String(localized: "\(destination) added"),
-                                 detail: index >= 0 ? String(localized: "Signed in") : nil)
+                MoveToHermesStep(state: index >= 0 || model.destinationAdded ? .done : .current(1),
+                                 title: String(localized: "\(destination) added"),
+                                 detail: index >= 0 || model.destinationAdded ? String(localized: "Signed in") : nil)
                 MoveToHermesStep(state: state(0), title: String(localized: "Notifications checked"))
                 MoveToHermesStep(state: state(1), title: String(localized: "Copying chats"),
                                  detail: copied.map { String(localized: "\($0.settled) of \($0.total)") })
@@ -616,22 +623,24 @@ private struct MoveToHermesReportView: View {
 
     /// Up to three chats by title, so the user knows which to check.
     private func titles(_ ids: [String]) -> String {
-        let names = ids.prefix(3).map { "“\(report.titles[$0] ?? $0)”" }
-        let listed = ListFormatter.localizedString(byJoining: names)
-        return ids.count > 3 ? String(localized: "\(listed) and \(ids.count - 3) more") : listed
+        Self.shortList(ids.map { "“\(report.titles[$0] ?? $0)”" })
+    }
+
+    /// Three items joined naturally, or the first three and how many more.
+    private static func shortList(_ items: [String]) -> String {
+        guard items.count > 3 else { return ListFormatter.localizedString(byJoining: items) }
+        return String(localized: "\(items.prefix(3).joined(separator: ", ")) and \(items.count - 3) more")
     }
 
     private func changeList(_ operations: [MoveToHermesReconcile.Operation]) -> String {
-        let named = operations.prefix(3).map { operation in
+        Self.shortList(operations.map { operation in
             let title = report.titles[operation.id] ?? operation.id
             return switch operation.change {
             case .title: String(localized: "Title on “\(title)”")
             case .pinned: String(localized: "Pin on “\(title)”")
             case .folder: String(localized: "Folder on “\(title)”")
             }
-        }
-        let listed = ListFormatter.localizedString(byJoining: named)
-        return operations.count > 3 ? String(localized: "\(listed) and \(operations.count - 3) more") : listed
+        })
     }
 }
 

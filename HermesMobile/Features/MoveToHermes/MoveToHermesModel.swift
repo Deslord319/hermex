@@ -378,7 +378,10 @@ enum MoveToHermesEntry: Equatable {
     /// Scans again and copies only what the destination still lacks, with the record's mapping.
     /// A finished report is acknowledged first, without switching servers.
     func copyMissingChatsAgain() {
-        if case .finished? = runner?.state { runner?.acknowledge() }
+        if case .finished? = runner?.state {
+            runner?.acknowledge()
+            refreshNotices()
+        }
         guard let destinationID, let url = URL(string: destinationID),
               let saved = try? BotConnectionStore(keychain: auth.keychain).load(server: url) else {
             return phase = .couldNotStart(.commit(.destinationSignedOut))
@@ -397,6 +400,10 @@ enum MoveToHermesEntry: Equatable {
 
     /// Waits for the sheet's current task; tests await it instead of sleeping.
     func settled() async { await work?.value }
+
+    /// Whether the destination already holds this move's record, so a pass that is still
+    /// checking the webui doesn't show it as being added.
+    var destinationAdded: Bool { destinationID.map { id in auth.moveRecord(forSource: sourceID)?.destination.id == id } ?? false }
 
     /// Whether the destination has a saved sign-in, so a pause there means unreachable, not signed out.
     var destinationIsSignedIn: Bool {
