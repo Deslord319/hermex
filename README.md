@@ -120,10 +120,14 @@ xcodebuild -project HermesMobile.xcodeproj -scheme HermesMobile \
 For a runnable build, configure your own team and identifiers in the ignored
 `Config/Local.xcconfig` as described in [Contributing](CONTRIBUTING.md#code-signing-for-contributors),
 then build with signing enabled. The Mac bundle identifier adds `.mac` to
-`APP_BUNDLE_IDENTIFIER`; the Mac sandbox permits outbound connections, selected
+`APP_BUNDLE_IDENTIFIER`. The Mac App Group uses
+`DEVELOPMENT_TEAM.APP_BUNDLE_IDENTIFIER.mac` so macOS can verify container access
+from the app’s signature. The Mac sandbox permits outbound connections, selected
 files, microphone, camera and photo-library access. Credentials remain in Keychain.
 
 The Mac uses the Mac-optimized interface idiom (native scale and controls),
+centered onboarding content over the full-window background, bounded connection
+forms,
 the existing two-column session navigation with a resizable sidebar
 and a minimum window size of 800 × 600 points. Keyboard commands include ⌘N
 (new chat), ⌘F (session search), ⌘1–9 (open a chat), ⌃Tab / ⌃⇧Tab

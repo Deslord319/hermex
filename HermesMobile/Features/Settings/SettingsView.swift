@@ -178,12 +178,14 @@ struct SettingsView: View {
 
                     SettingsFootnote(String(localized: "Apply your header color to these primary buttons."))
 
+                    #if !targetEnvironment(macCatalyst)
                     SettingsDivider()
-
                     AppIconSettingsSection()
+                    #endif
                 }
 
                 SettingsCard(title: String(localized: "Interaction")) {
+                    #if !targetEnvironment(macCatalyst)
                     SettingsToggleRow(
                         title: String(localized: "Haptic Feedback"),
                         systemImage: "iphone.radiowaves.left.and.right",
@@ -203,6 +205,8 @@ struct SettingsView: View {
                     }
 
                     SettingsDivider()
+
+                    #endif
 
                     // A wrapper carries the scroll anchor: the section's own id is its server.
                     VStack(alignment: .leading, spacing: 0) {
@@ -260,12 +264,14 @@ struct SettingsView: View {
                 }
 
                 SettingsCard(title: String(localized: "Chat")) {
+                    #if !targetEnvironment(macCatalyst)
                     SettingsToggleRow(
                         title: String(localized: "Dismiss keyboard after sending"),
                         systemImage: "keyboard.chevron.compact.down",
                         isOn: $dismissKeyboardAfterSend
                     )
                     SettingsDivider()
+                    #endif
                     SettingsPickerRow(
                         title: String(localized: "Position after response completes"),
                         systemImage: "text.alignleft",
@@ -504,6 +510,9 @@ struct SettingsView: View {
                 }
 
                 SettingsCard(title: String(localized: "Siri & Shortcuts")) {
+                    #if targetEnvironment(macCatalyst)
+                    SettingsFootnote(String(localized: "Run Hermex actions like New Chat from Siri, Spotlight, or Shortcuts."))
+                    #else
                     if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                         Link(destination: settingsURL) {
                             SettingsAccessoryRow(
@@ -517,6 +526,7 @@ struct SettingsView: View {
                     }
 
                     SettingsFootnote(String(localized: "Run Hermex actions like New Chat from Siri, Spotlight, the Lock Screen, or the iPhone Action button. Open Hermex Settings to manage its Siri & Search options. To assign an action to the Action button, open the iOS Settings app, choose Action Button, then Shortcut, and pick a Hermex action."))
+                    #endif
                 }
 
                 serversCard
@@ -2495,6 +2505,7 @@ struct AddServerView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 18)
                 .padding(.bottom, 36)
+                .macReadableContent()
             }
             .background(Color(.systemBackground))
             .navigationTitle("Add Server")
@@ -2512,9 +2523,13 @@ struct AddServerView: View {
         .confirmationDialog("Replace the webui server?", isPresented: $isConfirmingReplace, titleVisibility: .visible) {
             Button("Replace", role: .destructive) { submit(replacingWebuiServer: true) }
         } message: {
+            #if targetEnvironment(macCatalyst)
+            Text("Its sign-in, cached chats and drafts are removed from this Mac. Conversations on the host stay.")
+            #else
             Text("Its sign-in, cached chats and drafts are removed from this iPhone. Conversations on the host stay.")
+            #endif
         }
-        .adaptiveFormPresentation()
+        .adaptiveFormPresentation(preferredMacSize: CGSize(width: 640, height: 640))
         .onDisappear { operation?.cancel() }
     }
 

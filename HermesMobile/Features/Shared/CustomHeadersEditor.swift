@@ -61,7 +61,8 @@ struct CustomHeadersEditor: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 field {
-                    TextField("Header name", text: header.name)
+                    TextField("Header name", text: header.name,
+                              prompt: Text("Header name").foregroundStyle(style.secondaryText))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .foregroundStyle(style.primaryText)
@@ -80,7 +81,8 @@ struct CustomHeadersEditor: View {
             }
 
             field {
-                SecureField("Value", text: header.value)
+                SecureField("Value", text: header.value,
+                            prompt: Text("Value").foregroundStyle(style.secondaryText))
                     .foregroundStyle(style.primaryText)
                     .accessibilityLabel("Header value")
             }

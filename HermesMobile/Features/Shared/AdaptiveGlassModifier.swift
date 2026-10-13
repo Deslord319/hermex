@@ -39,6 +39,25 @@ private struct AdaptiveReadableScrollContentModifier: ViewModifier {
 }
 
 extension View {
+    /// Desktop connection forms stay readable without changing their mobile layout.
+    @ViewBuilder
+    func macReadableContent(maxWidth: CGFloat = 640) -> some View {
+        #if targetEnvironment(macCatalyst)
+        adaptiveReadableContent(maxWidth: maxWidth)
+        #else
+        self
+        #endif
+    }
+
+    @ViewBuilder
+    func macReadableForm(maxWidth: CGFloat = 640) -> some View {
+        #if targetEnvironment(macCatalyst)
+        adaptiveReadableScrollContent(maxWidth: maxWidth)
+        #else
+        self
+        #endif
+    }
+
     func adaptiveReadableContent(maxWidth: CGFloat) -> some View {
         modifier(AdaptiveReadableContentModifier(maxWidth: maxWidth))
     }
@@ -47,8 +66,18 @@ extension View {
         modifier(AdaptiveReadableScrollContentModifier(maxWidth: maxWidth))
     }
 
-    func adaptiveFormPresentation() -> some View {
+    @ViewBuilder
+    func adaptiveFormPresentation(preferredMacSize: CGSize? = nil) -> some View {
+        #if targetEnvironment(macCatalyst)
+        if let size = preferredMacSize {
+            frame(idealWidth: size.width, idealHeight: size.height)
+                .presentationSizing(.fitted)
+        } else {
+            presentationSizing(.form)
+        }
+        #else
         presentationSizing(.form)
+        #endif
     }
 
     func adaptivePagePresentation() -> some View {

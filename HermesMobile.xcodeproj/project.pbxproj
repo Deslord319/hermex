@@ -3250,6 +3250,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = HermesMobile/Resources/HermesMobile.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = HermesMobile/Resources/HermesMacCatalyst.entitlements;
+				"APP_GROUP_IDENTIFIER[sdk=macosx*]" = "$(DEVELOPMENT_TEAM).$(APP_BUNDLE_IDENTIFIER).mac";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
@@ -3282,6 +3283,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = HermesMobile/Resources/HermesMobile.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = HermesMobile/Resources/HermesMacCatalyst.entitlements;
+				"APP_GROUP_IDENTIFIER[sdk=macosx*]" = "$(DEVELOPMENT_TEAM).$(APP_BUNDLE_IDENTIFIER).mac";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
