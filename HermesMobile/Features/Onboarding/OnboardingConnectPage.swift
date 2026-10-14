@@ -143,7 +143,9 @@ struct OnboardingConnectPage: View {
             .padding(.bottom, 24)
         }
         .scrollBounceBehavior(.basedOnSize)
+        #if targetEnvironment(macCatalyst)
         .onAppear { if viewModel.connectionMode == .cloudflareTunnel { isShowingAdvanced = true } }
+        #endif
         .onChange(of: viewModel.connectionMode) { _, mode in
             // The Access rows Cloudflare Tunnel adds sit in Advanced, so they open with it.
             if mode == .cloudflareTunnel { isShowingAdvanced = true }
@@ -176,37 +178,6 @@ struct OnboardingConnectPage: View {
                 text: String(localized: "Hermes dashboard found. Sign in with your dashboard username and password."),
                 systemImage: "checkmark.circle.fill",
                 tint: success
-            )
-        }
-
-        if viewModel.needsBotModeOptIn {
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Hermes dashboard found")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                    Text("Adding one needs Bot Mode (beta), which is off. Bot Mode is unfinished, and you can turn it off again in Settings.")
-                        .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .accessibilityElement(children: .combine)
-
-                Button {
-                    viewModel.enableBotMode()
-                    focusedField = .username
-                } label: {
-                    Text("Turn on Bot Mode (beta) and continue")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(OnboardingSecondaryButtonStyle())
-                .disabled(viewModel.isConnectionLocked)
-            }
-            .padding(12)
-            .background(accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(accent.opacity(0.2), lineWidth: 1)
             )
         }
 

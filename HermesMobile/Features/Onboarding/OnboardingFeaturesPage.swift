@@ -8,7 +8,7 @@ struct OnboardingFeaturesPage: View {
         ("list.bullet.rectangle.portrait.fill", .green, String(localized: "Manage sessions, tasks, and files remotely"), String(localized: "Browse workspaces and stay on top of agent work.")),
         ("mic.fill", .purple, voiceTitle, voiceSubtitle),
         ("checkmark.shield.fill", .cyan, String(localized: "Review approvals and clarifications inline"), String(localized: "Respond to agent prompts without switching apps.")),
-        ("server.rack", .orange, String(localized: "Self-hosted: your machine, your tailnet"), String(localized: "Your Hermes Web UI stays on hardware you control."))
+        ("server.rack", .orange, String(localized: "Self-hosted: your machine, your tailnet"), String(localized: "Your Hermes host stays on hardware you control."))
     ] }
 
     private var chatTitle: String {
@@ -37,7 +37,7 @@ struct OnboardingFeaturesPage: View {
 
     private var voiceSubtitle: String {
         #if targetEnvironment(macCatalyst)
-        String(localized: "Send with ⌘Return. Use Return for a new line.")
+        String(localized: "Send with Return or ⌘Return. Use Shift-Return for a new line.")
         #else
         String(localized: "Compose naturally with touch-first controls.")
         #endif

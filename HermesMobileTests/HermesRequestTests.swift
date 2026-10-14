@@ -277,7 +277,8 @@ final class HermesRequestTests: XCTestCase {
     }
 
     /// The host rewrites a branch name before `git switch` (`_sanitize_branch`), so a name it
-    /// would change, which could reach another branch, is refused before anything is sent (#1116).
+    /// would change, which could reach another branch, is refused before anything is sent (#1116),
+    /// as is a new branch's through hermex-push (#1236).
     func testABranchSwitchSendsOnlyANameTheHostKeeps() throws {
         let base = URL(string: "https://hermes.example")!
         // A decomposed accent (U+0301) or zero-width joiner is stripped by the host, so "cafe\u{301}"
@@ -287,6 +288,9 @@ final class HermesRequestTests: XCTestCase {
             XCTAssertThrowsError(try HermesREST.gitSwitchBranch(repository: "/r", branch: name).request(base: base), name)
         }
         XCTAssertThrowsError(try HermesREST.gitSwitchBranch(repository: "", branch: "dev").request(base: base))
+        XCTAssertThrowsError(try HermesREST.gitCreateBranch(repository: "/r", name: "-b").request(base: base))
+        XCTAssertThrowsError(try HermesREST.gitCreateBranch(repository: "", name: "dev").request(base: base))
+        XCTAssertThrowsError(try HermesREST.gitFetch(repository: "").request(base: base))
         for name in ["dev", "feature/x-1", "release_2.0", "caf\u{E9}", "x\u{663}", "\u{216B}", "\u{2B0}x"] {
             let request = try HermesREST.gitSwitchBranch(repository: "/r", branch: name).request(base: base)
             let body = try JSONDecoder().decode(BotJSON.self, from: XCTUnwrap(request.httpBody))
@@ -325,6 +329,7 @@ final class HermesRequestTests: XCTestCase {
              "https://hermes.example:9120/api/dashboard/agent-plugins/hermex-push/disable", .object([:]), json),
             (.restartGateway, "POST", "https://hermes.example:9120/api/gateway/restart", .object([:]), json),
             (.pushPairing, "GET", "https://hermes.example:9120/api/plugins/hermex-push/pairing", nil, [:]),
+            (.pluginCapabilities, "GET", "https://hermes.example:9120/api/plugins/hermex-push/capabilities", nil, [:]),
             (.restartDashboard, "POST", "https://hermes.example:9120/api/plugins/hermex-push/restart", .object([:]), json),
             (.pluginsHub, "GET", "https://hermes.example:9120/api/dashboard/plugins/hub", nil, [:]),
             (.sessionMessages(key: "bg_0a5110", profile: "triage"), "GET",
@@ -383,6 +388,13 @@ final class HermesRequestTests: XCTestCase {
             (.gitBranches(repository: "/r/a+b"), "GET", "https://hermes.example:9120/api/git/branches?path=/r/a%2Bb", nil, [:]),
             (.gitSwitchBranch(repository: "/r", branch: "feature/x"), "POST", "https://hermes.example:9120/api/git/branch/switch",
              .object(["path": .string("/r"), "branch": .string("feature/x")]), json),
+            (.gitFetch(repository: "/r"), "POST", "https://hermes.example:9120/api/plugins/hermex-push/git/fetch",
+             .object(["path": .string("/r")]), json),
+            (.gitPull(repository: "/r"), "POST", "https://hermes.example:9120/api/plugins/hermex-push/git/pull",
+             .object(["path": .string("/r")]), json),
+            (.gitCreateBranch(repository: "/r", name: "feature/x"), "POST",
+             "https://hermes.example:9120/api/plugins/hermex-push/git/branch",
+             .object(["path": .string("/r"), "name": .string("feature/x")]), json),
             (.config(profile: "research"), "GET", "https://hermes.example:9120/api/config?profile=research", nil, [:]),
             (.profileSoul(name: "research"), "GET", "https://hermes.example:9120/api/profiles/research/soul", nil, [:]),
             (.setProfileSoul(name: "research", content: "Be direct."), "PUT", "https://hermes.example:9120/api/profiles/research/soul",

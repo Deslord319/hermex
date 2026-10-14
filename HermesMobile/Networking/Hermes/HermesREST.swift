@@ -102,8 +102,10 @@ enum HermesREST: Equatable, Sendable {
     /// One recording for `profile`'s speech-to-text: `dataURL` is base64 of up to 25 MiB of
     /// audio, and `mimeType` an `audio/*` type.
     case transcribe(profile: String, dataURL: String, mimeType: String)
-    /// One session-scoped file download. `path` is checked against the address.
-    case downloadArtifact(path: String, profile: String, sessionID: String)
+    /// One file download. `path` is checked against the address. With a session the host
+    /// resolves a relative path against that stored session's folder; without one, `path` must
+    /// be absolute, which works before the host has stored the session.
+    case downloadArtifact(path: String, profile: String, sessionID: String?)
     /// Writes one managed environment value at the host root.
     case setEnvironment(key: String, value: String)
     /// Installs an agent plugin, reinstalling over an existing copy.
@@ -111,6 +113,11 @@ enum HermesREST: Equatable, Sendable {
     case setPlugin(name: String, enabled: Bool)
     case restartGateway
     case pushPairing
+    /// hermex-push's mounted routes (#1235, plugin 0.5.0): no side effects, never 409.
+    case pluginCapabilities
+    /// hermex-push 0.7.0's account limits for one provider and Profile (#1237), in webui's
+    /// `/api/provider/quota` envelope. `refresh` skips the plugin's 45 s cache.
+    case companionProviderQuota(provider: String, profile: String, refresh: Bool)
     /// hermex-push 0.4.0's restart: 202, then the dashboard re-execs itself.
     case restartDashboard
     /// Every agent plugin with its on-disk version.
@@ -220,6 +227,13 @@ enum HermesREST: Equatable, Sendable {
     /// here. A remote ref (`origin/name`) would fail, so a remote row goes out by its short name,
     /// which git turns into a tracking branch.
     case gitSwitchBranch(repository: String, branch: String)
+    /// hermex-push 0.6.0's git writes (#1236), which the host's own routes lack: `fetch --prune`,
+    /// a fast-forward-only `pull`, and `switch -c name` from HEAD. Each answers `{ok, message}`,
+    /// or 400 `{detail}` as the host's git routes do. The plugin refuses a name its host's
+    /// sanitizer would rewrite, so `isBranchName` is checked here first.
+    case gitFetch(repository: String)
+    case gitPull(repository: String)
+    case gitCreateBranch(repository: String, name: String)
     /// Replaces or creates the file at a host path, atomically; `{ok, path, byteSize}`. It never
     /// creates folders: a missing parent is 400 "Parent directory does not exist".
     case fsWriteText(path: String, content: String)
@@ -325,13 +339,15 @@ enum HermesREST: Equatable, Sendable {
             return try Self.send("POST", try Self.url(base, "api/audio/transcribe", profile: profile),
                                  ["data_url": .string(dataURL), "mime_type": .string(mimeType)])
         case .downloadArtifact(let path, let profile, let sessionID):
-            guard !profile.isEmpty, !sessionID.isEmpty else { throw BotArtifactFailure.invalidReference }
+            guard !profile.isEmpty, sessionID?.isEmpty != true else { throw BotArtifactFailure.invalidReference }
             let path = try BotArtifactReference.path(path, address: base)
-            var parts = URLComponents(url: base.appendingPathComponent("api/fs/download"), resolvingAgainstBaseURL: false)
-            parts?.queryItems = [URLQueryItem(name: "path", value: path),
-                                 URLQueryItem(name: "profile", value: profile),
-                                 URLQueryItem(name: "session_id", value: sessionID)]
-            guard let url = parts?.url else { throw BotArtifactFailure.invalidReference }
+            guard var parts = URLComponents(url: base.appendingPathComponent("api/fs/download"), resolvingAgainstBaseURL: false)
+            else { throw BotArtifactFailure.invalidReference }
+            parts.queryItems = [URLQueryItem(name: "path", value: path), URLQueryItem(name: "profile", value: profile)]
+                + (sessionID.map { [URLQueryItem(name: "session_id", value: $0)] } ?? [])
+            // The host reads a query's `+` as a space; a path keeps its own.
+            parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+            guard let url = parts.url else { throw BotArtifactFailure.invalidReference }
             var request = URLRequest(url: url)
             request.cachePolicy = .reloadIgnoringLocalCacheData
             return request
@@ -347,6 +363,14 @@ enum HermesREST: Equatable, Sendable {
             return try Self.send("POST", url, [:])
         case .restartGateway: return try Self.send("POST", base.appendingPathComponent("api/gateway/restart"), [:])
         case .pushPairing: return Self.get(base.appendingPathComponent("api/plugins/hermex-push/pairing"))
+        case .pluginCapabilities: return Self.get(base.appendingPathComponent("api/plugins/hermex-push/capabilities"))
+        case .companionProviderQuota(let provider, let profile, let refresh):
+            guard var parts = URLComponents(url: base.appendingPathComponent("api/plugins/hermex-push/provider-quota"),
+                                            resolvingAgainstBaseURL: false) else { throw BotFailure.invalidAddress }
+            parts.queryItems = [URLQueryItem(name: "provider", value: provider), URLQueryItem(name: "profile", value: profile)]
+                + (refresh ? [URLQueryItem(name: "refresh", value: "1")] : [])
+            guard let url = parts.url else { throw BotFailure.invalidAddress }
+            return Self.get(url)
         case .restartDashboard: return try Self.send("POST", base.appendingPathComponent("api/plugins/hermex-push/restart"), [:])
         case .pluginsHub: return Self.get(base.appendingPathComponent("api/dashboard/plugins/hub"))
         case .sessionMessages(let key, let profile, let offset):
@@ -504,6 +528,13 @@ enum HermesREST: Equatable, Sendable {
             guard !repository.isEmpty, Self.isBranchName(branch) else { throw BotFailure.invalidAddress }
             return try Self.send("POST", base.appendingPathComponent("api/git/branch/switch"),
                                  ["path": .string(repository), "branch": .string(branch)])
+        case .gitFetch(let repository):
+            return try Self.pluginGit(base, "fetch", repository: repository, [:])
+        case .gitPull(let repository):
+            return try Self.pluginGit(base, "pull", repository: repository, [:])
+        case .gitCreateBranch(let repository, let name):
+            guard Self.isBranchName(name) else { throw BotFailure.invalidAddress }
+            return try Self.pluginGit(base, "branch", repository: repository, ["name": .string(name)])
         case .fsWriteText(let path, let content):
             return try Self.send("POST", base.appendingPathComponent("api/fs/write-text"),
                                  ["path": .string(path), "content": .string(content)])
@@ -631,6 +662,14 @@ enum HermesREST: Equatable, Sendable {
     }
 
     private static func get(_ url: URL) -> URLRequest { bare("GET", url) }
+
+    /// One of hermex-push's git writes at `repository`, with `fields` beside its `path`.
+    private static func pluginGit(_ base: URL, _ route: String, repository: String,
+                                  _ fields: [String: BotJSON]) throws -> URLRequest {
+        guard !repository.isEmpty else { throw BotFailure.invalidAddress }
+        return try send("POST", base.appendingPathComponent("api/plugins/hermex-push/git").appendingPathComponent(route),
+                        fields.merging(["path": .string(repository)]) { $1 })
+    }
 
     /// A GET of `route` whose query names host paths, each `+` kept as itself: the host reads a
     /// query's `+` as a space.

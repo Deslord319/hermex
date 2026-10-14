@@ -135,6 +135,7 @@ and a minimum window size of 800 × 600 points. Keyboard commands include ⌘N
 active input-method composition is left to the editor. The Mac composer keeps
 its editor and controls in one surface with room above the window edge. The file
 browser keeps search above its content, including empty and loading states.
+Source previews and Git diffs have a Mac Refresh action; source previews also support ⌘R.
 Web links open in the default browser.
 
 Live Activities, alternate app icons, the iOS share extension and encrypted relay

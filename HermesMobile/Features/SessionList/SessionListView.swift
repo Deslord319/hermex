@@ -732,6 +732,8 @@ struct SessionListView: View {
                     .sessionsScreenListRow()
             }
 
+            MoveToHermesBanner(serverID: server.absoluteString)
+
             if viewModel.isViewingCachedData {
                 OfflineCacheBanner()
                     .padding(.top, 16)

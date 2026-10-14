@@ -25,9 +25,10 @@ A Hermes server's id is its dashboard address as `BotConnection.address(_:)` par
 and its sign-in record is the same `BotConnection` JSON under `bot_connection::<its
 URL>`, so every Bot store, draft, cache, section order and bot link keys by it as they
 do by a webui server. `AuthManager.addHermesServer` saves a sign-in the form already
-verified and activates the server; it needs Bot Mode on and refuses an address already
-in the registry. Turning Bot Mode off later never locks a user out: an existing Hermes
-server still opens, and so do its bot links. Its home (#709) has two sides on one stack
+verified and activates the server, and refuses an address already in the registry.
+Hermes is the default kind (#712), so nothing about a Hermes server needs Bot Mode:
+adding one, moving a webui server to one, and opening one and its bot links all work
+with it off. Its home (#709) has two sides on one stack
 and one shared connection, the Bots inbox and the Sessions list, switched by a bottom bar
 of `(filter) [Bots | Sessions] (new chat)` that each side fills: on Bots the filter holds
 hidden bots and section order and new chat makes a bot or a group chat; on Sessions the
@@ -66,8 +67,7 @@ advice and stop, and a mode switch keeps that advice. Anything else, including a
 address or headers only the webui path accepts, goes on to the webui path unchanged:
 onboarding's `configure`, Add Server's `addServer`. Once a webui answered, the "Will
 connect to" line shows `AuthManager.normalizedServerURL`'s URL instead of the Hermes
-parser's. Header rows without a value are never sent or saved. With Bot Mode off, a
-found dashboard shows a one-tap opt-in instead of its fields. When a webui server's own
+parser's. Header rows without a value are never sent or saved. When a webui server's own
 Hermes connection uses exactly the same parsed address, the form offers "Use the sign-in
 saved on <server>": it fills username, password and headers, and the sign-in still
 expects that record's `install_id`. The copies stay until the address parses to another
@@ -1428,13 +1428,19 @@ panel (#1113) and Git (#1114) read the same context.
   Hermes client composes `cwd + "/" + path`, and it refuses an absolute path, a `..` component
   or a path with nothing past the root before any request. A child's path is its folder's plus
   its `name`, never the listing's `path`, which the host resolves (`/private/var/…` on a Mac) and
-  so may not start with the `cwd` that was asked for. Downloads (`/api/fs/download`) send the
-  relative path with `profile` and `session_id`, so the host anchors them to the session's own
-  folder; a MEDIA path goes as the reply wrote it. Rows, previews and errors show relative paths,
+  so may not start with the `cwd` that was asked for. A file's download (`/api/fs/download`)
+  sends its host path with `profile` and no `session_id`: with one, the host 404s until it has
+  stored the session, so Save to Files would fail in a chat before its first message (#1138). A
+  MEDIA path goes as the reply wrote it, with `session_id`, so the host resolves it against the
+  session. Rows, previews and errors show relative paths,
   and a refusal whose `detail` names a path reads as the generic failure.
 - **ENOENT-as-200.** `GET /api/fs/list` answers a folder it can't read with 200
   `{entries: [], error}`: `ENOENT` or `ENOTDIR` on the root is the folder-missing state, on a
   subfolder that row's failure; `EACCES` is a permission failure. None reports an error.
+- **Lazy folders.** The host lists one folder at a time, and a macOS-protected folder (Desktop,
+  Documents, Downloads, …) can block 6–11 s before answering `Interrupted system call`. So a
+  Hermes chat's Files opens with every folder closed and lists one only when tapped; webui opens
+  its top-level folders (#1138).
 - **Hidden folders.** The listing hides `.git .hg .svn .cache .next .turbo .venv __pycache__
   build dist node_modules target venv` and credential files, as Desktop does; the app adds no
   workaround. A symlinked folder lists as a file, so it is not browsable and opens the preview's
@@ -1479,8 +1485,9 @@ panel (#1113) and Git (#1114) read the same context.
   leaves the path unmapped. A diff over 512 KiB shows webui's too-large notice, and a
   `Binary files … differ` patch the binary one. A failed git call is 400 `{detail}`, git's
   stderr: it reads as "Repository status unavailable", and neither it nor the root is shown or
-  logged. Fetch and Pull are webui-only and hidden; the menu shows the branch and
-  `↑ahead ↓behind` as a row above Changes instead. The turn-end refresh and the
+  logged. Fetch and Pull show only through the hermex-push plugin (Sync, below); without it they
+  are hidden and the menu shows the branch and `↑ahead ↓behind` as a row above Changes
+  instead. The turn-end refresh and the
   Changes card work as on webui. A `cwd` or backend change closes an open Git sheet and reads the
   new folder's repository.
 - **Git writes (#1115).** Stage Changes, Commit, Commit & Push, Push and the inline commit button
@@ -1528,8 +1535,19 @@ panel (#1113) and Git (#1114) read the same context.
   host rewrites names first, so one it would change (`HermesREST.isBranchName`) is refused. A switch is a write the chat owns, as above, holds
   the repository's `GitWriteLock` (the picker is disabled while another write holds it), and any
   uncommitted change, untracked files included, refuses it with "Commit or discard first.":
-  there is no stash, and `git switch` would carry the changes across. New Branch, Fetch and Pull
-  stay hidden. After a switch the status and branches are read again.
+  there is no stash, and `git switch` would carry the changes across. After a switch the status
+  and branches are read again.
+- **Sync (#1236).** The host's git routes end at `branch/switch`, so Fetch, Pull and New Branch
+  go through hermex-push 0.6.0's `POST /api/plugins/hermex-push/git/fetch|pull {path}` and
+  `git/branch {path, name}` (`git fetch --prune`, `git pull --ff-only`, `git switch -c name`
+  from HEAD), each `{ok, message}` or 400 `{detail}` as the host's own routes answer. They show
+  only while the plugin's `/capabilities` lists all three (`HermesGitClient.supportsSync()`,
+  read with each Git load through the chat's own connection), and are hidden, exactly as before,
+  for no plugin, an older one or one not loaded. Each is a write the chat owns, holding the
+  `GitWriteLock`, and reads the status again after it; git's `message` is not shown. New Branch
+  is allowed on a dirty tree, carrying the changes, which is the usual reason to make one; a
+  switch to an existing branch still refuses them, and there is still no stash. Pull is
+  fast-forward only, with webui's confirmation copy.
 
 ## Memory on a Hermes host
 
@@ -1605,9 +1623,14 @@ little above webui's because the host reports no cache writes. The models card i
 model and billing provider, the provider leading its subtitle, in the host's order; the same
 pair can repeat (auxiliary usage), as on the dashboard's Models page. Messages come from
 `insights.get`, which counts only visible sessions among the newest 500 (no Bot Chats), so
-they read "≈". The host has no hours, provider limits (#710) or sessions list here
-(`InsightsFeatures.hermes`): the picker has no Today, Limits and top sessions never show, and a
-failed read is the screen's error rather than a fallback. A store the host can't read (a 503
+they read "≈". The host has no hours or sessions list here (`InsightsFeatures.hermes`): the
+picker has no Today, top sessions never show, and a failed read is the screen's error rather
+than a fallback. Limits (#1237) show only where hermex-push's capabilities list
+`GET /provider-quota`: the providers come from the Profile's `model.options` (its `provider`
+active, each authenticated row keyed), and each card from
+`GET /api/plugins/hermex-push/provider-quota?provider=&profile=&refresh=`, which answers in webui's
+`/api/provider/quota` envelope, so selection and cards are webui's. An OpenRouter key without a
+spending limit has no window and so no card, where webui shows its credit balance. A store the host can't read (a 503
 whose `detail.error` is `state_db_…`, or 5017) gets its own copy, never the host path the 503
 names. Empty-window sums arrive as null and read as 0. It is the Usage row on the home's
 Sessions side (#709).
@@ -1820,14 +1843,13 @@ was), and stops once all are idle. Caveats: `waiting` relies on the
 other processes and never appear; a tip the live agent rotated after the roster
 read matches no bot until the next roster read.
 
-Bot Mode ships behind `BotModeGate`, one app-wide `@AppStorage` bool that is off
-by default and owned by the Settings "Bot Mode (beta)" row (#496), which sits
-under Archived Sessions so new users notice it. Off hides the Bots row on the
-session list and pops the Bots inbox if it is open; nothing else changes, and
-Bot connections and drafts stay in the Keychain until it is turned on again. The
-gate is not per-server because it hides screens rather than storing user data.
-It is removed, together with its Settings row and `BotModeGateTests`, in the
-release PR that ships Bot Mode, not before.
+A webui server's Bots row sits behind `BotModeGate`, one app-wide `@AppStorage`
+bool that is off by default and owned by the Settings "Bot Mode (beta)" row (#496),
+which sits under Archived Sessions so new users notice it. Off hides the Bots row on a
+webui server's session list and pops the Bots inbox if it is open; nothing else
+changes, and Bot connections and drafts stay in the Keychain until it is turned on
+again. Hermes servers ignore it (#712). The gate is not per-server because it hides
+screens rather than storing user data.
 
 The Bots inbox is a utility destination of the session list, pushed like Tasks
 (the detail column on iPad), so the system back button returns to Sessions and
@@ -2558,7 +2580,9 @@ Settings also offers a plugin update (#851). `HermexPushPlugin.newestVersion` is
 plugin this build knows. Each time the Notifications section appears on a paired server,
 `checkPlugin()` makes one read of the pairing route: its `plugin_version` is the code the
 dashboard process has loaded, and a missing or unparseable one counts as older than every
-known version. Only a plugin that is behind costs a second read, `GET
+known version. A version read that 404s "No such API endpoint" means the dashboard has
+not mounted the plugin since it was installed, so it reads as nothing loaded (#1235): with the
+newest on disk the card is "Restart Hermes to finish", not a refused read. Only a plugin that is behind costs a second read, `GET
 /api/dashboard/plugins/hub`, whose per-plugin `version` is `plugin.yaml` on disk; the newest
 on disk means the update is only waiting for a restart. The answer lives in memory, never in
 `PushPairing`, so "Restart Hermes to finish" always reflects what the host says now. The
@@ -2584,8 +2608,8 @@ route whenever it answers, until the newest plugin is loaded; the old process ca
 just after the 202, so an old version keeps it waiting. A connection dropped on the restart
 request counts as the restart; an HTTP error before it ran is "Couldn't restart Hermes" with
 "Try again". Past the wait, the last answer stands: the old plugin (restart offered again), a
-host that answers but fails the plugin read (a new plugin that failed to import has no routes
-mounted) as a failed read, or silence as "Hermes didn't come back" with "Check again", which
+new plugin that failed to import, which leaves its routes unmounted, as "Restart Hermes to
+finish" on the host, a host that answers but fails the plugin read as a failed read, or silence as "Hermes didn't come back" with "Check again", which
 turns into a failed read once the host answers with an error. Without a configured signing secret the
 dashboard's basic-auth session key is per process, so the first read after a restart signs in
 again. A version read that fails after the reinstall and restart also offers "Check again",
@@ -2594,6 +2618,17 @@ use, at setup or from the test notification) offers the same update. An update s
 never pairs by itself; "Turn on notifications…" stays the way to pair. Turning notifications
 off drops the offer, because its install would enable the plugin again. Bump the constant in
 the release that follows a plugin release (TESTFLIGHT.md's release gates).
+
+Features that call a hermex-push route other than pairing and restart (Git's Fetch, Pull and
+New branch, #1236; provider limits, #1237) gate on what the dashboard has mounted, not on a
+version number: a POST can't be probed without running it. From 0.5.0 the plugin answers `GET
+/api/plugins/hermex-push/capabilities` with `{plugin_version, routes}`, each route a method and
+the path below the mount (`"GET /pairing"`), built from its own router so it can't drift. It has
+no side effects and never answers 409, so a host that uses the plugin without push set up can
+be read. `BotDashboardClient.companionRoutes()` reads it when the feature's screen loads,
+through that server's own connection, with no cache; any 404 (an older plugin, one not
+loaded, one turned off) is `HermexCompanionRoutes.closed`, and the feature just doesn't show.
+The restart nudge stays in Settings → Notifications, which owns the plugin's standing.
 
 Every way out removes this phone at the relay and wipes the keys, except that a relay
 device another entry for the same host still shares stays registered (`push.md`, #1178).
