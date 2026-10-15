@@ -323,6 +323,7 @@ struct MessageComposerView: View {
     @State private var noticeMessage: String?
     @State private var showsAllModelsSheet = false
     @State private var showsWorkspaceSheet = false
+    @State private var showsGitBranchPicker = false
     @State private var optimisticWorkspacePath: String?
     @State private var favoriteModelKeys = ModelFavoritesStore.shared.favoriteKeys
     @State private var recentModelKeys = ModelRecentsStore.shared.recentKeys
@@ -774,6 +775,15 @@ struct MessageComposerView: View {
                 finishVoiceNote(translationHeight: 0)
             }
         }
+        .onChange(of: showsGitBranchPicker) { _, isPresented in
+            // The New Branch alert takes the keyboard, so hand focus off up front
+            // and bring it back once the popover closes.
+            if isPresented {
+                prepareForComposerPresentation()
+            } else {
+                restoreFocusAfterPresentationDismissalSettles()
+            }
+        }
         .onChange(of: showMediaPicker) { _, isPresented in
             guard !isPresented else { return }
             guard presentFilesAfterMediaPickerDismisses else {
@@ -950,6 +960,7 @@ struct MessageComposerView: View {
             || shouldRestoreFocusAfterPresentation
             || showsAllModelsSheet
             || showsWorkspaceSheet
+            || showsGitBranchPicker
             || showMediaPicker
             || showFileImporter
         #endif
@@ -1249,7 +1260,8 @@ struct MessageComposerView: View {
                 allowsCreate: gitViewModel.supportsSync,
                 onSelect: onSelectGitBranch,
                 onCreate: onCreateGitBranch,
-                onRefresh: onRefreshGitBranches
+                onRefresh: onRefreshGitBranches,
+                showsPicker: $showsGitBranchPicker
             )
         }
     }

@@ -86,6 +86,12 @@ main checkout normally uses **iPhone 17**. Resolve its UDID with
 are ambiguous, so pass the UDID. The runner never chooses another device or
 creates one, and refuses to boot a fifth simulator.
 
+The tests run inside the installed app, so a test can change its real Keychain,
+cookies and defaults. `HermesMobileTests/TestHostStateGuard.swift` snapshots
+them when the test bundle starts and restores them when it finishes. A simulator
+signed in with `scripts/sim-login` stays signed in after a run. A run killed
+before it finishes can still sign it out.
+
 ```zsh
 # Focused tests; repeat --only for multiple classes or individual test methods.
 scripts/test-sim <simulator-udid> --only HermesMobileTests/BotLiveActivityTests
@@ -148,12 +154,34 @@ Exit codes: **0** passed; **1** build/test failure; **2** busy device, setup, or
 result-verification failure; **124** timeout; **130** interrupted. On a busy
 device or infrastructure failure, report the blocker and log path; stop rather
 than rebooting, erasing devices, clearing caches, or rerunning unchanged tests.
+Each run also saves the Mac's swap use at start in `memory.log`.
 For actual test failures, inspect the recorded failure and follow the repo's
 baseline-check procedure where applicable. On timeout or interruption, the runner
 terminates the isolated process group it spawned, including remaining descendants,
 and leaves other jobs and the simulator itself alone.
 
 Runner checks: `python3 -m unittest discover -s scripts/tests -v`.
+
+### Stuck simulators
+
+`scripts/sim-doctor [udid]` says why a simulator is stuck and prints the one
+command that clears it. Every probe has a 20-second limit, so it is safe to run
+while things hang. Exit 0 means nothing needs clearing; 1 prints a `FIX:` line.
+
+- `SERVICE`: CoreSimulator itself stopped answering. Only the owner restarts it,
+  because that stops every booted simulator.
+- `MEMORY`: the device doesn't respond while the Mac is paging. On a 16 GB Mac,
+  simulator processes then sit in uninterruptible waits, and boots and launches
+  stall. Free memory first; booting another simulator makes it worse. Heavy swap
+  alone only warns.
+- `DEVICE`: one simulator stopped answering while CoreSimulator still does. The
+  session that owns it shuts it down and boots it by UDID.
+- `ZOMBIE_APP`: Hermex is a zombie the simulator still lists as running, so
+  `launch` and `terminate` never return. A debugger that detached, or was
+  killed, while the app was stopped leaves this. Restart that simulator. To get
+  a backtrace without causing it, end lldb with `kill`:
+  `lldb -p <pid> --batch -o continue -k "thread backtrace all" -k kill`, and
+  don't `simctl terminate` the app while lldb holds it.
 
 ## PR CI
 
@@ -272,11 +300,13 @@ The `HERMEX_DEV_*` environment variables (`HERMEX_DEV_SERVER_URL`, `HERMEX_DEV_P
 
 ### Recording signposts
 
-`HermesMobile/Config/PerformanceSignposts.swift` marks six intervals in every build, under the bundle ID as subsystem (`com.uzairansar.hermesmobile`, or `com.uzairansar.hermesmobile.branch` for Hermex Branch) and category `Performance`. Metadata is counts only; never add text, titles, paths, URLs, or IDs.
+`HermesMobile/Config/PerformanceSignposts.swift` marks eight intervals in every build, under the bundle ID as subsystem (`com.uzairansar.hermesmobile`, or `com.uzairansar.hermesmobile.branch` for Hermex Branch) and category `Performance`. Metadata is counts only; never add text, titles, paths, URLs, or IDs.
 
 | Interval | Measures | Metadata |
 |---|---|---|
-| `Session Open` | A session-list open (tap or keyboard) to the first transcript frame, or to the empty state when the transcript is empty | `messages` |
+| `Launch` | The app's `init` to the first frame after a home list (webui or Hermes) holds session rows, cached or read; rows in a collapsed group count | `rows` |
+| `Session Open` | A session-list open (tap or keyboard, or a Hermes list pushing its chat) to the first transcript frame, or to the empty state when the transcript is empty | `messages` |
+| `Load Earlier` | Load earlier (button or pull) to the layout of the prepended rows | `messages` |
 | `Transcript Apply` | Painting the cached transcript, or applying a reloaded one | `messages` |
 | `Markdown Parse` | Parsing one markdown block | `chars` |
 | `Stream Batch Apply` | Applying one batch of streamed tokens | `mutated` (0 or 1) |
@@ -296,7 +326,7 @@ xcrun xctrace export --input /tmp/hermex.trace \
 
 ### Watching the Bot connection log
 
-`HermesConnection` logs Bot sign-ins and the gateway socket's lifecycle under the bundle ID as subsystem and the category `HermesConnection` (`docs/agents/bots.md`). In Console.app, select a cabled iPhone, start streaming, and filter `subsystem:com.uzairansar.hermesmobile category:HermesConnection` (`com.uzairansar.hermesmobile.branch` for Hermex Branch). Check it on a device: the simulator's `log show` doesn't show these lines.
+`HermesConnection` logs Bot sign-ins and the gateway socket's lifecycle under the bundle ID as subsystem and the category `HermesConnection` (`docs/agents/hermes-server.md`). In Console.app, select a cabled iPhone, start streaming, and filter `subsystem:com.uzairansar.hermesmobile category:HermesConnection` (`com.uzairansar.hermesmobile.branch` for Hermex Branch). Check it on a device: the simulator's `log show` doesn't show these lines.
 
 ## Swift File-Size Policy
 

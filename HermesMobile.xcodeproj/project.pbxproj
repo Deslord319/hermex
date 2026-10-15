@@ -314,6 +314,14 @@
 		C04400000000000000000003 /* CacheFallbackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04400000000000000000004 /* CacheFallbackPolicyTests.swift */; };
 		C86900000000000000000003 /* NetworkPathMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C86900000000000000000004 /* NetworkPathMonitorTests.swift */; };
 		1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */; };
+		125200000000000000000002 /* SettingsRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125200000000000000000001 /* SettingsRows.swift */; };
+		125200000000000000000004 /* SettingsAppPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125200000000000000000003 /* SettingsAppPages.swift */; };
+		125200000000000000000006 /* SettingsAboutPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125200000000000000000005 /* SettingsAboutPage.swift */; };
+		125200000000000000000008 /* SettingsNotificationsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125200000000000000000007 /* SettingsNotificationsPage.swift */; };
+		12520000000000000000000A /* SettingsServerPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125200000000000000000009 /* SettingsServerPage.swift */; };
+		12520000000000000000000C /* WebuiServerSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12520000000000000000000B /* WebuiServerSettings.swift */; };
+		125200000000000000000010 /* WebuiServerSettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12520000000000000000000F /* WebuiServerSettingsModel.swift */; };
+		12520000000000000000000E /* AddServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12520000000000000000000D /* AddServerView.swift */; };
 		E1075000000000000000A005 /* HermesUpdateCallout.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1075000000000000000A006 /* HermesUpdateCallout.swift */; };
 		E1075000000000000000A003 /* HermesUpdateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1075000000000000000A004 /* HermesUpdateMachine.swift */; };
 		1A2B3C4D5E6F7000000000F8 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */; };
@@ -417,6 +425,7 @@
 		B5A100000000000000000008 /* ShareInputReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000018 /* ShareInputReader.swift */; };
 		B5A100000000000000000009 /* ShareInputReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000019 /* ShareInputReaderTests.swift */; };
 		B5A100000000000000000060 /* AuthManagerStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000061 /* AuthManagerStateTests.swift */; };
+		B5A1000000000000000FA001 /* TestHostStateGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A1000000000000000FA002 /* TestHostStateGuard.swift */; };
 		B5A220000000000000000001 /* ChatMarkerMessageClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A220000000000000000002 /* ChatMarkerMessageClassifier.swift */; };
 		B5A220000000000000000003 /* MarkerMessageCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A220000000000000000004 /* MarkerMessageCardView.swift */; };
 		C22300000000000000000001 /* CompressionAnchorResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22300000000000000000002 /* CompressionAnchorResolver.swift */; };
@@ -515,7 +524,7 @@
 		13FED0A00B8A4C06B7F30BF0 /* BotConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A712D3AE91645C9B8C27745 /* BotConnection.swift */; };
 		A4730000000000000000A001 /* BotAvatarStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4730000000000000000A002 /* BotAvatarStore.swift */; };
 		A4770000000000000000D001 /* HermesDelegatedWork.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4770000000000000000D002 /* HermesDelegatedWork.swift */; };
-		325E432BC1E464DC8678D298 /* HermexPushSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62920C6E58407FA35B380660 /* HermexPushSectionView.swift */; };
+		325E432BC1E464DC8678D298 /* HermexPushSettingsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62920C6E58407FA35B380660 /* HermexPushSettingsPage.swift */; };
 		24676011C3AD546FE1848199 /* HermexPushProvisioner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94D3E33AAB500B0D0B956289 /* HermexPushProvisioner.swift */; };
 		D04C75E073B6B4661647A495 /* HermexPushPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 475ED41B3C6AC2391C39ED44 /* HermexPushPairing.swift */; };
 		A4770000000000000000D003 /* HermesDelegatedWorkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4770000000000000000D004 /* HermesDelegatedWorkView.swift */; };
@@ -559,6 +568,7 @@
 		A1218000000000000000A005 /* MoveToHermesModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1218000000000000000A006 /* MoveToHermesModelTests.swift */; };
 		E1052000000000000000A001 /* HermesProjects.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1052000000000000000A002 /* HermesProjects.swift */; };
 		C8240A000000000000000001 /* HermesConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8240A000000000000000002 /* HermesConnection.swift */; };
+		C87080000000000000000001 /* HermesBrowserSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = C87080000000000000000002 /* HermesBrowserSignIn.swift */; };
 		E1071000000000000000A001 /* HermesTranscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1071000000000000000A002 /* HermesTranscription.swift */; };
 		C8250A000000000000000001 /* HermesGateway.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8250A000000000000000002 /* HermesGateway.swift */; };
 		C8970A000000000000000001 /* HermesCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8970A000000000000000002 /* HermesCompatibility.swift */; };
@@ -577,6 +587,7 @@
 		D885F4C0DA3A438B8CE92635 /* BotClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0B04ED8E6164A75B069773D /* BotClientTests.swift */; };
 		C8230A000000000000000005 /* HermesRequestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8230A000000000000000006 /* HermesRequestTests.swift */; };
 		C8240A000000000000000003 /* HermesConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8240A000000000000000004 /* HermesConnectionTests.swift */; };
+		C87080000000000000000003 /* HermesBrowserSignInTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C87080000000000000000004 /* HermesBrowserSignInTests.swift */; };
 		E1071000000000000000A003 /* HermesTranscribeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1071000000000000000A004 /* HermesTranscribeTests.swift */; };
 		E1040000000000000000A003 /* HermesCronClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1040000000000000000A004 /* HermesCronClientTests.swift */; };
 		E1043000000000000000A003 /* HermesKanbanClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1043000000000000000A004 /* HermesKanbanClientTests.swift */; };
@@ -976,6 +987,14 @@
 		C04400000000000000000004 /* CacheFallbackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheFallbackPolicyTests.swift; sourceTree = "<group>"; };
 		C86900000000000000000004 /* NetworkPathMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkPathMonitorTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		125200000000000000000001 /* SettingsRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRows.swift; sourceTree = "<group>"; };
+		125200000000000000000003 /* SettingsAppPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsAppPages.swift; sourceTree = "<group>"; };
+		125200000000000000000005 /* SettingsAboutPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsAboutPage.swift; sourceTree = "<group>"; };
+		125200000000000000000007 /* SettingsNotificationsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsNotificationsPage.swift; sourceTree = "<group>"; };
+		125200000000000000000009 /* SettingsServerPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsServerPage.swift; sourceTree = "<group>"; };
+		12520000000000000000000B /* WebuiServerSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebuiServerSettings.swift; sourceTree = "<group>"; };
+		12520000000000000000000F /* WebuiServerSettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebuiServerSettingsModel.swift; sourceTree = "<group>"; };
+		12520000000000000000000D /* AddServerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddServerView.swift; sourceTree = "<group>"; };
 		E1075000000000000000A006 /* HermesUpdateCallout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesUpdateCallout.swift; sourceTree = "<group>"; };
 		E1075000000000000000A004 /* HermesUpdateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesUpdateMachine.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
@@ -1125,6 +1144,7 @@
 		B5A100000000000000000016 /* SharedDraftStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedDraftStoreTests.swift; sourceTree = "<group>"; };
 		B5A100000000000000000019 /* ShareInputReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInputReaderTests.swift; sourceTree = "<group>"; };
 		B5A100000000000000000061 /* AuthManagerStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManagerStateTests.swift; sourceTree = "<group>"; };
+		B5A1000000000000000FA002 /* TestHostStateGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHostStateGuard.swift; sourceTree = "<group>"; };
 		B5A220000000000000000002 /* ChatMarkerMessageClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkerMessageClassifier.swift; sourceTree = "<group>"; };
 		B5A220000000000000000004 /* MarkerMessageCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerMessageCardView.swift; sourceTree = "<group>"; };
 		C22300000000000000000002 /* CompressionAnchorResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionAnchorResolver.swift; sourceTree = "<group>"; };
@@ -1185,7 +1205,7 @@
 		0A712D3AE91645C9B8C27745 /* BotConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Bots/BotConnection.swift"; sourceTree = "<group>"; };
 		A4730000000000000000A002 /* BotAvatarStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Bots/BotAvatarStore.swift"; sourceTree = "<group>"; };
 		A4770000000000000000D002 /* HermesDelegatedWork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDelegatedWork.swift; sourceTree = "<group>"; };
-		62920C6E58407FA35B380660 /* HermexPushSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Bots/HermexPushSectionView.swift"; sourceTree = "<group>"; };
+		62920C6E58407FA35B380660 /* HermexPushSettingsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Bots/HermexPushSettingsPage.swift"; sourceTree = "<group>"; };
 		94D3E33AAB500B0D0B956289 /* HermexPushProvisioner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Bots/HermexPushProvisioner.swift"; sourceTree = "<group>"; };
 		475ED41B3C6AC2391C39ED44 /* HermexPushPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Bots/HermexPushPairing.swift"; sourceTree = "<group>"; };
 		A4770000000000000000D004 /* HermesDelegatedWorkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDelegatedWorkView.swift; sourceTree = "<group>"; };
@@ -1229,6 +1249,7 @@
 		A1218000000000000000A006 /* MoveToHermesModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveToHermesModelTests.swift; sourceTree = "<group>"; };
 		E1052000000000000000A002 /* HermesProjects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Hermes/HermesProjects.swift"; sourceTree = "<group>"; };
 		C8240A000000000000000002 /* HermesConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Hermes/HermesConnection.swift"; sourceTree = "<group>"; };
+		C87080000000000000000002 /* HermesBrowserSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Hermes/HermesBrowserSignIn.swift"; sourceTree = "<group>"; };
 		E1071000000000000000A002 /* HermesTranscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Hermes/HermesTranscription.swift"; sourceTree = "<group>"; };
 		C8250A000000000000000002 /* HermesGateway.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Hermes/HermesGateway.swift"; sourceTree = "<group>"; };
 		C8970A000000000000000002 /* HermesCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Hermes/HermesCompatibility.swift"; sourceTree = "<group>"; };
@@ -1247,6 +1268,7 @@
 		B0B04ED8E6164A75B069773D /* BotClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BotClientTests.swift"; sourceTree = "<group>"; };
 		C8230A000000000000000006 /* HermesRequestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesRequestTests.swift; sourceTree = "<group>"; };
 		C8240A000000000000000004 /* HermesConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConnectionTests.swift; sourceTree = "<group>"; };
+		C87080000000000000000004 /* HermesBrowserSignInTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesBrowserSignInTests.swift; sourceTree = "<group>"; };
 		E1071000000000000000A004 /* HermesTranscribeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesTranscribeTests.swift; sourceTree = "<group>"; };
 		E1040000000000000000A004 /* HermesCronClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesCronClientTests.swift; sourceTree = "<group>"; };
 		E1043000000000000000A004 /* HermesKanbanClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesKanbanClientTests.swift; sourceTree = "<group>"; };
@@ -1417,6 +1439,7 @@
 				B0B04ED8E6164A75B069773D /* BotClientTests.swift */,
 				C8230A000000000000000006 /* HermesRequestTests.swift */,
 				C8240A000000000000000004 /* HermesConnectionTests.swift */,
+				C87080000000000000000004 /* HermesBrowserSignInTests.swift */,
 				E1071000000000000000A004 /* HermesTranscribeTests.swift */,
 				E1040000000000000000A004 /* HermesCronClientTests.swift */,
 				E1043000000000000000A004 /* HermesKanbanClientTests.swift */,
@@ -1612,6 +1635,7 @@
 				B5A100000000000000000016 /* SharedDraftStoreTests.swift */,
 				B5A100000000000000000019 /* ShareInputReaderTests.swift */,
 				B5A100000000000000000061 /* AuthManagerStateTests.swift */,
+				B5A1000000000000000FA002 /* TestHostStateGuard.swift */,
 				B5A220000000000000000006 /* ChatMarkerMessageClassifierTests.swift */,
 				D1FF76200000000000000003 /* MarkdownDiffFormatterTests.swift */,
 				031031031031031031031004 /* MarkdownMathRendererTests.swift */,
@@ -1679,6 +1703,7 @@
 				E1048000000000000000A002 /* HermesSessionActions.swift */,
 				E1052000000000000000A002 /* HermesProjects.swift */,
 				C8240A000000000000000002 /* HermesConnection.swift */,
+				C87080000000000000000002 /* HermesBrowserSignIn.swift */,
 				E1071000000000000000A002 /* HermesTranscription.swift */,
 				C8250A000000000000000002 /* HermesGateway.swift */,
 				C8970A000000000000000002 /* HermesCompatibility.swift */,
@@ -1783,7 +1808,7 @@
 				40877A8534C94AAF97EA1C7C /* BotConnectionView.swift */,
 				0A712D3AE91645C9B8C27745 /* BotConnection.swift */,
 				A4730000000000000000A002 /* BotAvatarStore.swift */,
-				62920C6E58407FA35B380660 /* HermexPushSectionView.swift */,
+				62920C6E58407FA35B380660 /* HermexPushSettingsPage.swift */,
 				94D3E33AAB500B0D0B956289 /* HermexPushProvisioner.swift */,
 				475ED41B3C6AC2391C39ED44 /* HermexPushPairing.swift */,
 				A48400000000000000000902 /* BotSlashCommands.swift */,
@@ -2067,6 +2092,14 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */,
+				125200000000000000000001 /* SettingsRows.swift */,
+				125200000000000000000003 /* SettingsAppPages.swift */,
+				125200000000000000000005 /* SettingsAboutPage.swift */,
+				125200000000000000000007 /* SettingsNotificationsPage.swift */,
+				125200000000000000000009 /* SettingsServerPage.swift */,
+				12520000000000000000000B /* WebuiServerSettings.swift */,
+				12520000000000000000000F /* WebuiServerSettingsModel.swift */,
+				12520000000000000000000D /* AddServerView.swift */,
 				E1075000000000000000A006 /* HermesUpdateCallout.swift */,
 				E1075000000000000000A004 /* HermesUpdateMachine.swift */,
 				C012400000000000000003 /* AppIconSettingsSection.swift */,
@@ -2494,6 +2527,7 @@
 				E1048000000000000000A001 /* HermesSessionActions.swift in Sources */,
 				E1052000000000000000A001 /* HermesProjects.swift in Sources */,
 				C8240A000000000000000001 /* HermesConnection.swift in Sources */,
+				C87080000000000000000001 /* HermesBrowserSignIn.swift in Sources */,
 				E1071000000000000000A001 /* HermesTranscription.swift in Sources */,
 				C8250A000000000000000001 /* HermesGateway.swift in Sources */,
 				C8970A000000000000000001 /* HermesCompatibility.swift in Sources */,
@@ -2530,7 +2564,7 @@
 				13FED0A00B8A4C06B7F30BF0 /* BotConnection.swift in Sources */,
 				A4730000000000000000A001 /* BotAvatarStore.swift in Sources */,
 				A4770000000000000000D001 /* HermesDelegatedWork.swift in Sources */,
-				325E432BC1E464DC8678D298 /* HermexPushSectionView.swift in Sources */,
+				325E432BC1E464DC8678D298 /* HermexPushSettingsPage.swift in Sources */,
 				24676011C3AD546FE1848199 /* HermexPushProvisioner.swift in Sources */,
 				D04C75E073B6B4661647A495 /* HermexPushPairing.swift in Sources */,
 				A4770000000000000000D003 /* HermesDelegatedWorkView.swift in Sources */,
@@ -2640,6 +2674,14 @@
 				C28702000000000000000001 /* ChatDraftStore.swift in Sources */,
 				C28702000000000000000005 /* ChatDraftAttachmentStore.swift in Sources */,
 				1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */,
+				125200000000000000000002 /* SettingsRows.swift in Sources */,
+				125200000000000000000004 /* SettingsAppPages.swift in Sources */,
+				125200000000000000000006 /* SettingsAboutPage.swift in Sources */,
+				125200000000000000000008 /* SettingsNotificationsPage.swift in Sources */,
+				12520000000000000000000A /* SettingsServerPage.swift in Sources */,
+				12520000000000000000000C /* WebuiServerSettings.swift in Sources */,
+				125200000000000000000010 /* WebuiServerSettingsModel.swift in Sources */,
+				12520000000000000000000E /* AddServerView.swift in Sources */,
 				E1075000000000000000A005 /* HermesUpdateCallout.swift in Sources */,
 				E1075000000000000000A003 /* HermesUpdateMachine.swift in Sources */,
 				C012400000000000000004 /* AppIconSettingsSection.swift in Sources */,
@@ -2856,6 +2898,7 @@
 				D885F4C0DA3A438B8CE92635 /* BotClientTests.swift in Sources */,
 				C8230A000000000000000005 /* HermesRequestTests.swift in Sources */,
 				C8240A000000000000000003 /* HermesConnectionTests.swift in Sources */,
+				C87080000000000000000003 /* HermesBrowserSignInTests.swift in Sources */,
 				E1071000000000000000A003 /* HermesTranscribeTests.swift in Sources */,
 				E1040000000000000000A003 /* HermesCronClientTests.swift in Sources */,
 				E1043000000000000000A003 /* HermesKanbanClientTests.swift in Sources */,
@@ -3051,6 +3094,7 @@
 				C0DE89400000000000000007 /* ComposerDocumentThumbnailsTests.swift in Sources */,
 				B5A100000000000000000009 /* ShareInputReaderTests.swift in Sources */,
 				B5A100000000000000000060 /* AuthManagerStateTests.swift in Sources */,
+				B5A1000000000000000FA001 /* TestHostStateGuard.swift in Sources */,
 				B5A220000000000000000005 /* ChatMarkerMessageClassifierTests.swift in Sources */,
 				031031031031031031031003 /* MarkdownMathRendererTests.swift in Sources */,
 				D1FF76200000000000000004 /* MarkdownDiffFormatterTests.swift in Sources */,
@@ -3273,7 +3317,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER)";
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = "$(APP_BUNDLE_IDENTIFIER).mac";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -3306,7 +3350,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER)";
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = "$(APP_BUNDLE_IDENTIFIER).mac";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -3327,13 +3371,14 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPrincipalClass = HermesMobileTests.TestHostStateGuard;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -3351,13 +3396,14 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPrincipalClass = HermesMobileTests.TestHostStateGuard;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -3383,7 +3429,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).shareextension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -3411,7 +3457,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).shareextension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -3439,7 +3485,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).liveactivitywidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -3468,7 +3514,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).notifications";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -3496,7 +3542,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).liveactivitywidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -3525,7 +3571,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.9;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).notifications";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

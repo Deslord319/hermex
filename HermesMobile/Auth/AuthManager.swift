@@ -110,7 +110,9 @@ final class AuthManager {
         self.forgetPush = forgetPush
         restoreSavedServer()
         refreshServers()
-        self.hermesConnections.onSignInRejected = { [weak self] server in self?.hermesSignInRejected(server: server) }
+        self.hermesConnections.onSignInRejected = { [weak self] server, failure in
+            self?.hermesSignInRejected(server: server, failure: failure)
+        }
     }
 
     /// The active server's id (its normalized URL string), or nil when
@@ -384,13 +386,14 @@ final class AuthManager {
     }
 
     /// The host refused the active Hermes server's saved username or password at the
-    /// login step (`HermesConnections.onSignInRejected`), including the one silent
-    /// re-login a signed-in 401 starts. Shows that server's sign-in form, where no Bot
-    /// screen exists to send the refused password again. Any other server, and a webui
+    /// login step, or its browser sign-in's refresh token (`failure`, from
+    /// `HermesConnections.onSignInRejected`), including the one silent re-sign-in a
+    /// signed-in 401 starts. Shows that server's sign-in form, with `failure`'s advice,
+    /// where no Bot screen exists to send the refused credential again. Any other server, and a webui
     /// server's own Hermes connection, which keeps its per-screen flag (#884), stays as it is.
-    func hermesSignInRejected(server: URL) {
+    func hermesSignInRejected(server: URL, failure: BotFailure = .rejected(401)) {
         guard state == .loggedIn(server: server), kind(of: server) == .hermes else { return }
-        lastErrorMessage = BotConnectionAdvice.message(for: BotFailure.rejected(401), address: server)
+        lastErrorMessage = BotConnectionAdvice.message(for: failure, address: server)
         state = .loggedOut(server: server)
     }
 
@@ -589,10 +592,12 @@ final class AuthManager {
 
     /// Deletes `server`'s Bot connection record with that connection's cached avatars,
     /// which also retires its shared sign-in (`BotConnectionStore.remove`), and the Profile
-    /// its New Session remembers (#1015) and whether its Sessions list shows every Profile (#709).
+    /// its New Session remembers (#1015), whether its Sessions list shows every Profile (#709),
+    /// and the Profile that list last read.
     private func removeBotConnection(for server: URL) {
         HermesProfilePreference.save(nil, for: server, in: preferences)
         HermesProfilePreference.saveShowsAllProfiles(false, for: server, in: preferences)
+        HermesProfilePreference.saveLastListed(nil, for: server, in: preferences)
         let bots = BotConnectionStore(keychain: keychain)
         if let connection = try? bots.load(server: server) {
             BotAvatarStore.shared.removeAll(connectionID: connection.id)

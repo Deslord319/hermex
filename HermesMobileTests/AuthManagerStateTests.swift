@@ -705,6 +705,25 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(manager.state, .loggedIn(server: webuiServer))
     }
 
+    /// The host refusing a browser sign-in's refresh token (#708) shows the server's sign-in
+    /// form saying the sign-in expired, not that a password was wrong.
+    func testAnExpiredBrowserSignInSignsAHermesServerOutAsExpired() async throws {
+        defer { HermesHostFixture.reset() }
+        let keychain = InMemoryKeychainStore()
+        let connections = HermesConnections(configuration: { HermesHostFixture.configuration { request in
+            request.url?.path == "/auth/native/refresh" ? .json(401, .object(["error": .string("session_expired")])) : nil
+        } }, keychain: keychain)
+        let manager = try await makeHermesManager(keychain: keychain, connections: connections)
+        var saved = try XCTUnwrap(BotConnectionStore(keychain: keychain).load(server: hermesServer))
+        saved.oauth = HermesOAuth(provider: "nous", userID: "me", refreshToken: "refresh")
+        try BotConnectionStore(keychain: keychain).save(saved, server: hermesServer)
+
+        do { try await connections.connection(for: saved, server: hermesServer).signIn(); XCTFail("The refresh was refused") } catch {}
+
+        XCTAssertEqual(manager.state, .loggedOut(server: hermesServer))
+        XCTAssertEqual(manager.lastErrorMessage, "Your Hermes sign-in expired. Sign in again.")
+    }
+
     func testOtherSignInFailuresKeepAHermesServerSignedIn() async throws {
         defer { HermesHostFixture.reset() }
         var login: HermesHostFixture.Reply = .json(200, .object([:]))
@@ -747,6 +766,7 @@ final class AuthManagerStateTests: XCTestCase {
                                                   forgetPush: { forgottenPush.append($0) })
         HermesProfilePreference.save("work", for: hermesServer, in: preferences)
         HermesProfilePreference.save("work", for: webuiServer, in: preferences)
+        HermesProfilePreference.saveLastListed("work", for: hermesServer, in: preferences)
         let side = BotConnection(id: UUID(), name: "Side", address: hermesServer, username: "me", password: "secret")
         try BotConnectionStore(keychain: keychain).save(side, server: webuiServer)
         let cookies = HTTPCookieStorage.shared
@@ -761,6 +781,7 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(cookies.cookies(for: webuiServer)?.count, 1)
         XCTAssertNil(preferences.string(forKey: HermesProfilePreference.key(for: hermesServer)),
                      "the remembered Profile goes with the sign-in (#1015)")
+        XCTAssertNil(HermesProfilePreference.lastListed(for: hermesServer, in: preferences))
         XCTAssertEqual(preferences.string(forKey: HermesProfilePreference.key(for: webuiServer)), "work")
         XCTAssertEqual(forgottenPush, [hermesServer], "this iPhone stops getting the host's pushes")
     }

@@ -34,7 +34,7 @@ to `CacheStore`. Two consequences:
 
 | State | Server kinds | Where it lives | How it's scoped |
 | --- | --- | --- | --- |
-| Push notification preferences | webui (Hermes: #706) | Server-scoped shared Keychain pairing (`PushPairing.preferences`) | Replies, subagent mute, and previews apply to this device for that server. Every relay registration sends its confirmed choices, including after token rotation. Settings → Interaction → Notifications separates these from the global local-alert and Live Activity excerpt preferences. |
+| Push notification preferences | webui (Hermes: #706) | Server-scoped shared Keychain pairing (`PushPairing.preferences`) | Replies, subagent mute, and previews apply to this device for that server. Every relay registration sends its confirmed choices, including after token rotation. Settings → Notifications separates these from the global local-alert and Live Activity excerpt preferences. |
 | Live Activity identity | both | ActivityKit attributes (`AgentRunActivityAttributes`) | A webui run's carries its configured `server` (#566), a bot's names its server and Bot connection in `bot:<connection UUID>:<Profile>` and its route, and a Hermes session's (#1179) carries its `server`, its session link and its stored key under `hermes:<profile>:<root>`. Reuse requires the same server, so equal IDs on two servers never share an activity; relay routes use that server's pairing; a tap opens through the server-qualified route, switching servers first. Cold launch checks an unpaired Hermes session's activity only against the signed-in active Hermes server. A stored key a legacy compression moved lives in the standard defaults (`LiveActivityPushKeys`), keyed by the push server plus the activity's ID and stream. Tested in `LiveActivityTests`, `HermesChatLiveActivityTests` and `PushRegistrationTests`. |
 | Auth cookies | webui | `HTTPCookieStorage` (shared jar) | Cleared/queried per active server URL (#16). Same-host/different-port servers still share the jar — documented #16 limitation. |
 | Custom request headers | webui | Keychain, per-server-scoped keys (#16) | `CustomHeaderStore` is hydrated for the active server; SSE + requests source headers from the active store. |
@@ -46,6 +46,7 @@ to `CacheStore`. Two consequences:
 | Browsed Kanban Board | both | UserDefaults, per-server key (`KanbanBoardPreference.key(for:)` = `kanban.selectedBoard|<server absoluteString>`) | Per-server since #259: `KanbanFeatureState` restores the last locally browsed Board on load after validating it against the server's fresh Board list, and drops a stale slug silently. Local browsing never calls the server's switch endpoint. A Hermes server's Kanban (#1043) uses the same key with its configured URL. Tested in `KanbanFeatureStateTests` (`testBrowsedBoardIsRestoredForTheSameServerAndIsolatedFromOthers`). |
 | "Show CLI sessions" toggle | webui | UserDefaults, per-server key (`SessionRowDisplaySettings.showCliSessionsKey(for:)` = `sessionRow.showCliSessions|<server absoluteString>`) | Per-server since #19: the toggle mirrors the server's own `show_cli_sessions` setting (adopted on Settings load, written back via `POST /api/settings`), so an adopted value on one server cannot leak to another. Reads fall back to the pre-#19 global key as a migration seed, then to shown-by-default. Tested in `CliSessionsSyncModelTests`. |
 | New Hermes session's Profile | Hermes | UserDefaults, per-server key (`HermesProfilePreference.key(for:)` = `hermes.selectedProfile|<server absoluteString>`) | Since #1015: the Profile last picked in a Hermes chat's Profile chip or, since #1046, the Sessions list's Profile menu. New Session and the Sessions list use it while a fresh `profiles.list` still has it, else the host's `/api/profiles/active` `current`, and drops a stale pick silently. Never written to the host. Sign-out and server removal delete it. Tested in `HermesChatSettingsTests.testTheRememberedProfileIsPerServerAndFallsBackToCurrent` and `AuthManagerStateTests.testSigningOutOfAHermesServerDeletesOnlyItsSignInAndShowsItsForm`. |
+| Hermes Sessions list's last-read Profile | Hermes | UserDefaults, per-server key (`hermes.lastListedProfile|<server absoluteString>`, `HermesProfilePreference.lastListed(for:)`) | The Profile whose host read the Sessions list last applied. A list opened without a Profile or a pick shows that Profile's cached rows while it connects, and offline, without taking it: it never names the Profile the host settles or New Session's. Sign-out and server removal delete it. Tested in `HermesOfflineCacheTests.testAListWithoutAPickShowsTheProfileItLastReadWhileItConnects` and `AuthManagerStateTests.testSigningOutOfAHermesServerDeletesOnlyItsSignInAndShowsItsForm`. |
 | Shortcuts picker's Hermes Profile names | Hermes | App-group UserDefaults, per-server key (`HermesProfileNameCache`, `hermesProfileNames.v1|<SHA-256 of server absoluteString>`) | Since #1180: the Profile names and titles the server's Bots roster last showed, which the New Chat in Profile picker titles that server's section with and lists while its `/api/status` can't be read. Kept through sign-out, which the picker still lists the server across; server removal deletes it. A Hermes Profile entity's id names its server (`<server URL>|<profile>`), so equal names on two servers are two choices. The key is a digest so the app group holds no server URL. Tested in `AppIntentNewChatInProfileTests` and `BotInboxTests.testEachRosterReadLeavesTheProfilesNamesForShortcuts`. |
 | Hermes Sessions list's All Profiles | Hermes | UserDefaults, per-server key (`hermes.sessionsShowAllProfiles|<server absoluteString>`, `HermesProfilePreference.showsAllProfiles(for:)`) | Since #709: whether the home's Sessions list shows every Profile's sessions. Set only while true. Picking one Profile clears it; server removal deletes it. Tested in `HermesSessionListTests.testAllProfilesListsEveryProfileUntilOneIsPicked`. |
 | Bots inbox section order | both | UserDefaults (`BotSectionOrderStore`) | Per-server and per-Bot-connection key `bot-inbox-section-order.<connection UUID>|<server absoluteString>`, holding the Desktop section ids the user placed from "Reorder Sections…". Never sent to Desktop; removing the Bot connection deletes it. Tested in `BotInboxTests.testPlacedSectionsKeepTheirOrderPerConnectionAndResetReturnsToAToZ`. |
@@ -88,11 +89,12 @@ to `CacheStore`. Two consequences:
   cache holds, by cached position, or anywhere once it reached the first row (a
   rewind or undo). Position, not id, since a compaction re-inserts the first
   rows under higher ids. Otherwise it goes by the TTL or the cap.
-- Read only while the host can't be reached (`CacheFallbackPolicy`, which also
-  reads a Hermes `BotFailure`): the list shows the Profile's cached rows and a
-  chat its newest cached page, read-only under the offline banner, until a read
-  succeeds. Sign-out, server removal and `clearCache(for:)` take the Hermes
-  rows with the server's others.
+- Read while an empty list or chat connects, and while the host can't be
+  reached (`CacheFallbackPolicy`, which also reads a Hermes `BotFailure`): the
+  list shows the Profile's cached rows and a chat its newest cached page,
+  read-only, until a read succeeds. Only the unreachable case shows the offline
+  banner. Sign-out, server removal and `clearCache(for:)` take the Hermes rows
+  with the server's others.
 - **A bot's Bot Chat (#1144)** caches its transcript only, never a list row
   (a webui server's list reads and sweeps every session row of its server),
   under `hermes-bot|<connection UUID>|<Profile>|<canonical root>`, which a
@@ -170,7 +172,7 @@ long-press menu) — there is no separate on-screen server label.
 
 ## Clear-cache behavior (issue #18 change)
 
-"Clear Offline Cache" (Settings → Offline Data) is **scoped to the active
+"Clear Offline Cache" (Settings → Servers → the active webui server → Offline Data) is **scoped to the active
 server**: `CacheStore.clearCache(for: server, in:)` deletes only that server's
 cached sessions/messages. Other configured servers' offline data and the Hermes
 server itself are untouched. The footnote and confirmation copy state this
@@ -239,6 +241,6 @@ before reconnecting, but never restore runtime identity or action permissions.
 The same removal/clear paths invalidate recent snapshots and their writer tokens.
 The bounded local search cache uses a hash
 of the configured server URL plus connection UUID and Profile, and is cleared
-with that server’s offline cache or connection removal. See [Bot Mode](bots.md) for
+with that server’s offline cache or connection removal. See [Hermes server](hermes-server.md) for
 identity, removal and recovery rules. `BotDraftTests` covers disk persistence,
 connection/server removal and compatibility with existing webui records.

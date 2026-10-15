@@ -273,7 +273,7 @@ struct ChatView: View {
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
     @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey) private var showsLiveActivityResponseExcerpts = false
-    @AppStorage(ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey) private var showsThinkingAndToolCards = true
+    @AppStorage(ChatTranscriptDisplaySettings.thinkingAndToolCardsKey) private var thinkingAndToolCards = ThinkingAndToolCards.collapsed
     @AppStorage(ChatTranscriptDisplaySettings.foldsSettledTurnsKey) private var foldsSettledTurns = true
     @AppStorage(ChatTranscriptDisplaySettings.rtlChatLayoutEnabledKey) private var rtlChatLayoutEnabled = ChatTranscriptDisplaySettings.rtlChatLayoutDefaultEnabled
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsFilesButton = true
@@ -309,6 +309,8 @@ struct ChatView: View {
     let onHermesChatReplaced: (() -> Void)?
     /// A Hermes session's dictation goes to its host for its Profile (#1071).
     private let hermesTranscriber: ComposerTranscriber?
+    /// Matches a Hermes chat's `Session Open` signpost to the list push that began it.
+    private let hermesSessionChatID: String?
     /// Returns to the Sessions list under this Hermes chat, in the entry's Profile (this chat's)
     /// and searching the query `/sessions` or `/resume` named (#1053). Nil pushes a list on top
     /// instead.
@@ -466,6 +468,7 @@ struct ChatView: View {
         self.restoresDraftSettings = restoresDraftSettings
         self.onConversationStarted = onConversationStarted
         isHermesSession = hermesSession != nil
+        hermesSessionChatID = hermesSession?.id.uuidString
         hermesParentKey = hermesSession?.parentKey
         self.onReplaceHermesSession = onReplaceHermesSession
         self.onHermesChatReplaced = onHermesChatReplaced
@@ -529,9 +532,10 @@ struct ChatView: View {
             ),
             // A Hermes prompt whose answer was lost holds Send until the chat reattaches (#508), and
             // a request card's answer holds it while out, so Steer and Queue send no competing
-            // Continue (#1141).
+            // Continue (#1141). So does a cached transcript shown while the chat connects.
             isSending: viewModel.isStartingChat || viewModel.isSendingVoiceNote || viewModel.isHermesSubmissionUncertain
-                || viewModel.isUndoingExchange || viewModel.hermesRequests?.answeringRequestID != nil,
+                || viewModel.isUndoingExchange || viewModel.hermesRequests?.answeringRequestID != nil
+                || viewModel.isCachedCopyProvisional,
             isCompressingSession: viewModel.isCompressingSession,
             isWaitingForStream: viewModel.activeStreamID != nil,
             isCancellingStream: viewModel.isCancellingStream,
@@ -732,7 +736,7 @@ struct ChatView: View {
     private var composerReadOnlyMessage: String? {
         Self.composerReadOnlyMessage(
             for: session,
-            isViewingCachedData: viewModel.isViewingCachedData
+            isViewingCachedData: viewModel.showsOfflineCache
         )
     }
 
@@ -941,7 +945,7 @@ struct ChatView: View {
 
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
-                    if viewModel.isViewingCachedData {
+                    if viewModel.showsOfflineCache {
                         ChatOfflineCacheBanner()
                     }
 
@@ -1991,7 +1995,7 @@ struct ChatView: View {
             activeStreamRecoveryState: viewModel.activeStreamRecoveryState,
             clarificationPromptID: requestInsetID,
             hidesRunStatusAccessibility: activeRunStatusPresentation != nil,
-            showsThinkingAndToolCards: showsThinkingAndToolCards,
+            showsThinkingAndToolCards: thinkingAndToolCards.showsCards,
             workingRowStartedAt: workingRowStartedAt,
             requestWithdrawal: viewModel.hermesRequests?.withdrawal,
             showsScrollToBottomButton: showsScrollToBottomButton,
@@ -2322,7 +2326,7 @@ struct ChatView: View {
     private func turnFolds(reasoningGroups: [ReasoningGroup]) -> TranscriptTurnFolds {
         guard foldsSettledTurns else { return .none }
 
-        let activityAnchorIDs: Set<String> = showsThinkingAndToolCards
+        let activityAnchorIDs: Set<String> = thinkingAndToolCards.showsCards
             ? Set(reasoningGroups.compactMap(\.anchorMessageID))
                 .union(viewModel.completedToolCallGroups.compactMap(\.anchorMessageID))
             : []
@@ -2435,7 +2439,7 @@ struct ChatView: View {
     /// Ends this session's `Session Open` interval on the next main-queue turn, so
     /// it includes the layout of the first transcript frame (or the empty state).
     private func endSessionOpenSignpost() {
-        let sessionID = session.sessionId
+        let sessionID = hermesSessionChatID ?? session.sessionId
         let messages = viewModel.messages.count
         DispatchQueue.main.async {
             SessionOpenSignpost.end(sessionID: sessionID, messages: messages)
@@ -2504,7 +2508,13 @@ struct ChatView: View {
     private func loadOlderMessages() async -> Bool {
         followLatch.isFollowing = false
 
+        let signpost = performanceSignposter.beginInterval("Load Earlier")
         let didLoad = await viewModel.loadOlderMessages(modelContext: modelContext)
+        let messages = viewModel.messages.count
+        // The next main-queue turn, so the interval includes the prepended rows' layout.
+        DispatchQueue.main.async {
+            performanceSignposter.endInterval("Load Earlier", signpost, "messages=\(messages, privacy: .public)")
+        }
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
@@ -4053,7 +4063,6 @@ struct ChatToolbarActionCluster<Content: View>: View {
         HStack(spacing: 4) {
             content
         }
-        .padding(.horizontal, 4)
         .frame(minHeight: 44)
         .modifier(LegacyToolbarClusterStyle())
         .accessibilityElement(children: .contain)
@@ -4062,8 +4071,9 @@ struct ChatToolbarActionCluster<Content: View>: View {
 
 /// On iOS 26+ the navigation toolbar already renders this trailing item inside a
 /// Liquid Glass pill, so styling the cluster ourselves stacked a second capsule
-/// and produced the double border reported in #333. Below iOS 26 the system
-/// supplies no pill, so we keep the original material capsule there.
+/// and produced the double border reported in #333. Its padding is ours too: on iOS 26 it
+/// stretched a lone 44pt button's round glass into an oval beside the round back button.
+/// Below iOS 26 the system supplies no pill, so we keep the original material capsule there.
 private struct LegacyToolbarClusterStyle: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
 
@@ -4073,6 +4083,7 @@ private struct LegacyToolbarClusterStyle: ViewModifier {
             content
         } else {
             content
+                .padding(.horizontal, 4)
                 .background(
                     Color(.secondarySystemBackground).opacity(colorScheme == .dark ? 0.24 : 0.42),
                     in: Capsule()
