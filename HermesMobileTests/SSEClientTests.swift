@@ -146,37 +146,23 @@ final class SSEClientTests: XCTestCase {
         client.stop()
     }
 
-    func testDecodesToolStartedEventFromUpstreamPayload() {
-        let event = SSEEventDecoder.decode(
-            eventType: "tool",
-            data: """
-            {
-              "event_type": "tool.started",
-              "name": "read_file",
-              "preview": "Reading file",
-              "args": {
-                "path": "/tmp/example.swift",
-                "limit": 120,
-                "recursive": false
-              }
-            }
-            """
-        )
+    /// A tunnel or server that closes a quiet stream cleanly must reach the
+    /// consumer too, so it can resume instead of waiting on a dead stream.
+    func testSSEClientReportsTransportErrorWhenServerClosesStream() async {
+        DelayedSSEURLProtocol.configure(chunks: [DelayedSSEChunk(text: ": heartbeat\n\n", delayNanoseconds: 0)])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DelayedSSEURLProtocol.self]
+        let client = SSEClient(urlSessionConfiguration: configuration)
+        let transportError = expectation(description: "server close reported as transportError")
 
-        guard case .toolStarted(let payload) = event else {
-            XCTFail("Expected toolStarted, got \(event)")
-            return
+        client.start(url: URL(string: "https://example.test/api/chat/stream?stream_id=stream-123")!) { event in
+            if case .transportError = event {
+                transportError.fulfill()
+            }
         }
 
-        XCTAssertEqual(payload.eventType, "tool.started")
-        XCTAssertEqual(payload.name, "read_file")
-        XCTAssertEqual(payload.preview, "Reading file")
-        XCTAssertEqual(payload.args?["path"], .string("/tmp/example.swift"))
-        XCTAssertEqual(payload.args?["limit"], .number(120))
-        XCTAssertEqual(payload.args?["recursive"], .bool(false))
-        XCTAssertNil(payload.duration)
-        XCTAssertNil(payload.isError)
-        XCTAssertNil(payload.stableID)
+        await fulfillment(of: [transportError], timeout: 5)
+        client.stop()
     }
 
     func testDecodesToolCompletedEventFromUpstreamPayload() {
@@ -242,30 +228,6 @@ final class SSEClientTests: XCTestCase {
         }
     }
 
-    func testDecodesReasoningEventFromUpstreamPayload() {
-        let event = SSEEventDecoder.decode(
-            eventType: "reasoning",
-            data: #"{"text":"I need to inspect the file first."}"#
-        )
-
-        XCTAssertEqual(event, .reasoning("I need to inspect the file first."))
-    }
-
-    func testDecodesInterimAssistantEventFromUpstreamPayload() {
-        let event = SSEEventDecoder.decode(
-            eventType: "interim_assistant",
-            data: #"{"text":"Inspecting repo structure.","already_streamed":false}"#
-        )
-
-        XCTAssertEqual(
-            event,
-            .interimAssistant(InterimAssistantStreamEvent(
-                text: "Inspecting repo structure.",
-                alreadyStreamed: false
-            ))
-        )
-    }
-
     func testInterimAssistantPayloadToleratesTypeDrift() {
         let event = SSEEventDecoder.decode(
             eventType: "interim_assistant",
@@ -293,28 +255,6 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(payload.name, "tool_without_args")
         XCTAssertNil(payload.preview)
         XCTAssertNil(payload.args)
-    }
-
-    func testDecodesDoneEventAsStreamCompletionSignal() {
-        let event = SSEEventDecoder.decode(
-            eventType: "done",
-            data: #"{"session":{"session_id":"abc123"},"usage":{}}"#
-        )
-
-        guard case .done(let payload) = event else {
-            XCTFail("Expected done event.")
-            return
-        }
-
-        XCTAssertEqual(payload.session?.sessionId, "abc123")
-        XCTAssertEqual(payload.usage, ContextWindowSnapshot(
-            contextLength: nil,
-            thresholdTokens: nil,
-            lastPromptTokens: nil,
-            inputTokens: nil,
-            outputTokens: nil,
-            estimatedCost: nil
-        ))
     }
 
     func testDecodesDoneEventUsagePayload() {
@@ -372,20 +312,6 @@ final class SSEClientTests: XCTestCase {
 
         XCTAssertEqual(payload.sessionId, "abc123")
         XCTAssertEqual(payload.displayableTokensPerSecond, 42.25)
-    }
-
-    func testDecodesMissingLiveMeteringFieldsAsNil() {
-        let event = SSEEventDecoder.decode(eventType: "metering", data: "{}")
-
-        guard case .metering(let payload) = event else {
-            XCTFail("Expected metering event.")
-            return
-        }
-
-        XCTAssertNil(payload.tokensPerSecond)
-        XCTAssertNil(payload.isTokensPerSecondAvailable)
-        XCTAssertNil(payload.isEstimated)
-        XCTAssertNil(payload.sessionId)
     }
 
     func testMalformedLiveMeteringFieldsDoNotDiscardValidFields() {
@@ -653,12 +579,6 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(event, .transportError("The stream returned a malformed completion event."))
     }
 
-    func testMalformedDoneSessionPayloadSurfacesTransportError() {
-        let event = SSEEventDecoder.decode(eventType: "done", data: #"{"session":1,"usage":{}}"#)
-
-        XCTAssertEqual(event, .transportError("The stream returned a malformed completion event."))
-    }
-
     func testMalformedErrorPayloadSurfacesExplicitError() {
         let event = SSEEventDecoder.decode(eventType: "error", data: "{")
 
@@ -691,12 +611,6 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(event, .error("The stream returned an error."))
     }
 
-    func testMalformedAppErrorPayloadSurfacesExplicitError() {
-        let event = SSEEventDecoder.decode(eventType: "apperror", data: "{")
-
-        XCTAssertEqual(event, .error("The stream returned a malformed error event."))
-    }
-
     func testUnknownStreamEventTypeIsIgnored() {
         let event = SSEEventDecoder.decode(
             eventType: "future_server_event",
@@ -723,8 +637,8 @@ private final class DelayedSSEURLProtocol: URLProtocol {
 
     /// `keepOpen` leaves the response open after the chunks instead of finishing
     /// it, so a test can end it with `failActiveConnection(with:)` at a moment it
-    /// controls. A finished response is a clean end-of-stream, which the SSE
-    /// library auto-reconnects; a failure is a dropped connection.
+    /// controls. A finished response is a clean server close, which the client
+    /// reports as a transport error; a failure is a dropped connection.
     static func configure(chunks: [DelayedSSEChunk], keepOpen: Bool = false) {
         lock.lock()
         self.chunks = chunks

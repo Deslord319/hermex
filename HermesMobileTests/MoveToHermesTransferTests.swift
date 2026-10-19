@@ -194,17 +194,20 @@ final class MoveToHermesTransferTests: XCTestCase {
         XCTAssertEqual(MoveWebuiFixture.requests.compactMap { Self.query($0, "session_id") }, ["b"])
     }
 
-    /// A rate-limited import wrote nothing but isn't refused for good: it is left for replay.
-    func testRateLimitedImportIsLeftForReplay() async throws {
+    /// A rate-limited import, or one the write fence refused (#1300), wrote nothing but isn't
+    /// refused for good: it is left for replay.
+    func testRateLimitedOrFencedImportIsLeftForReplay() async throws {
         host.held = ["default": []]
-        host.importReplies = [.json(429, .object(["detail": .string("Too Many Requests")]))]
+        host.importReplies = [.json(429, .object(["detail": .string("Too Many Requests")])),
+                              .json(409, .object(["detail": .string("revision_conflict")]))]
         MoveWebuiFixture.exports = ["a": exportData("a")]
         let hermes = try await hermesClient()
 
-        let outcomes = await copy([item("a")], hermes: hermes)
-
-        XCTAssertEqual(outcomes, ["a": .uncertain(profile: "default")])
-        XCTAssertEqual(host.imports.count, 1)
+        for status in [429, 409] {
+            let outcomes = await copy([item("a")], hermes: hermes)
+            XCTAssertEqual(outcomes, ["a": .uncertain(profile: "default")], "\(status)")
+        }
+        XCTAssertEqual(host.imports.count, 2)
     }
 
     /// The copy's client has a jar of its own, seeded with the source's sign-in, so a Profile
@@ -385,14 +388,6 @@ final class MoveToHermesTransferTests: XCTestCase {
               let profile = query(request, "profile") else { return nil }
         return (String(path.dropFirst("/api/sessions/".count)), profile)
     }
-
-    private static func cookies(_ request: URLRequest) -> [String: String] {
-        let header = request.value(forHTTPHeaderField: "Cookie") ?? ""
-        return header.split(separator: ";").reduce(into: [:]) { cookies, pair in
-            let parts = pair.trimmingCharacters(in: .whitespaces).split(separator: "=", maxSplits: 1).map(String.init)
-            if parts.count == 2 { cookies[parts[0]] = parts[1] }
-        }
-    }
 }
 
 /// The scripted Hermes host's state and answers, read under `HermesHostFixture`'s lock.
@@ -461,7 +456,8 @@ private final class FakeHermes: @unchecked Sendable {
 }
 
 /// A scripted webui: the scan listing, Profile switches and JSON exports. Answers only
-/// `webui.example`.
+/// `webui.example` and `studio.example`, the second webui server Move Next opens, with the
+/// same script.
 final class MoveWebuiFixture: URLProtocol {
     private static let lock = NSLock()
     nonisolated(unsafe) static var rows: [[String: BotJSON]] = []
@@ -479,7 +475,9 @@ final class MoveWebuiFixture: URLProtocol {
         lock.withLock { rows = []; allProfiles = true; listingFailure = nil; exports = [:]; switchReplies = [:]; log = [] }
     }
 
-    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "webui.example" }
+    override class func canInit(with request: URLRequest) -> Bool {
+        ["webui.example", "studio.example"].contains(request.url?.host)
+    }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func stopLoading() {}
 

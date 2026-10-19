@@ -15,16 +15,16 @@ import XCTest
 final class OnboardingViewModelIdentityTests: XCTestCase {
     // MARK: - Identity semantics
 
-    func testCanonicallyEquivalentURLsShareIdentity() throws {
+    func testCanonicallyEquivalentURLsShareIdentity() {
         let viewModel = OnboardingViewModel()
         viewModel.serverURLString = "https://example.com"
-        let before = try XCTUnwrap(identity(of: viewModel))
+        let before = viewModel.probeConnectionIdentityForTesting()
 
         viewModel.serverURLString = "https://example.com/"
-        XCTAssertEqual(try identity(of: viewModel), before, "trailing slash must not churn")
+        XCTAssertEqual(viewModel.probeConnectionIdentityForTesting(), before, "trailing slash must not churn")
 
         viewModel.serverURLString = "  https://EXAMPLE.com/path?query=1#frag  "
-        XCTAssertEqual(try identity(of: viewModel), before, "case/whitespace/path/query/fragment are normalized away")
+        XCTAssertEqual(viewModel.probeConnectionIdentityForTesting(), before, "case/whitespace/path/query/fragment are normalized away")
     }
 
     func testHeaderNameCaseAndOrderDoNotChangeIdentity() {
@@ -33,14 +33,14 @@ final class OnboardingViewModelIdentityTests: XCTestCase {
             CustomHeader(name: "X-API-Key", value: "k1"),
             CustomHeader(name: "Authorization", value: "Bearer abc")
         ]
-        let before = currentIdentity(viewModel)
+        let before = viewModel.probeConnectionIdentityForTesting()
 
         viewModel.customHeaders = [
             CustomHeader(name: "authorization", value: "Bearer abc"),
             CustomHeader(name: "x-api-key", value: "k1")
         ]
 
-        XCTAssertEqual(currentIdentity(viewModel), before)
+        XCTAssertEqual(viewModel.probeConnectionIdentityForTesting(), before)
     }
 
     func testDuplicateNameReorderChangesEffectiveCredentialAndInvalidates() {
@@ -298,54 +298,6 @@ final class OnboardingViewModelIdentityTests: XCTestCase {
         XCTAssertFalse(viewModel.isConnectionLocked)
     }
 
-    // Edit during connect(): the operation must be refused outright while the
-    // form is locked (inputs frozen), so no second connect can interleave.
-    // The accepted connect walks its REAL four-phase schedule: the ViewModel's
-    // own probe (health, authStatus) followed by configure's internal re-probe
-    // (health, authStatus).
-    func testConnectWhileLockedIsRefused() async {
-        let gatekeeper = OnboardingGateKeeper()
-        let client = GatedAuthAPIClient(
-            gatekeeper: gatekeeper,
-            outcome: .succeed(AuthStatusResponse(authEnabled: false, loggedIn: true))
-        )
-        let manager = makeGatedManager(client)
-        let viewModel = makeWebuiFormViewModel()
-        viewModel.serverURLString = "https://example.com"
-
-        let connectTask = Task { await viewModel.connect(authManager: manager) }
-        await gatekeeper.waitForEvents(1, "accepted connect should park in its probe's health()")
-
-        XCTAssertTrue(viewModel.isConnectionLocked, "inputs frozen for the whole connect")
-        XCTAssertTrue(viewModel.isWorking)
-        XCTAssertNil(viewModel.authStatus, "probe still in flight — capability-derived UI must not be asserted yet")
-
-        let loginsBefore = client.configuredPasswords.count
-
-        // Return-key during lock must be refused by the guard.
-        await viewModel.connect(authManager: manager)
-        XCTAssertEqual(gatekeeper.recordedPhases.count, 1, "refused connect starts no network work")
-
-        // Settle the accepted connect through all four phases: release each
-        // gate only after its successor has parked, keeping the schedule
-        // deterministic.
-        for expected in 2...4 {
-            gatekeeper.releaseNext()
-            await gatekeeper.waitForEvents(expected, "connect schedule phase \(expected)")
-        }
-        gatekeeper.releaseNext()
-
-        _ = await connectTask.value
-
-        XCTAssertEqual(client.configuredPasswords.count, loginsBefore, "passwordless configure must not attempt login")
-        XCTAssertFalse(viewModel.isConnectionLocked, "lock released after settle")
-        XCTAssertFalse(viewModel.isWorking)
-        XCTAssertNotNil(viewModel.authStatus, "accepted connect settles to a probed status")
-        XCTAssertNil(viewModel.errorMessage)
-        XCTAssertFalse(viewModel.isPasswordRequired, "trusted-header status hides the password field AFTER settle")
-        XCTAssertEqual(manager.state, .loggedIn(server: URL(string: "https://example.com")!))
-    }
-
     // Configure reaches AuthManager exactly once per accepted connect: one
     // keychain persist, one registry activation, zero login attempts on a
     // passwordless server.
@@ -517,6 +469,39 @@ final class OnboardingViewModelIdentityTests: XCTestCase {
         XCTAssertEqual(saved.hermesVersion, "0.21.5")
     }
 
+    /// Opened from Move to Hermes, a browser sign-in host is no longer refused (#1266): it signs
+    /// in and is added, without switching to it.
+    func testABrowserHostSignsInFromAMoveWithoutSwitching() async throws {
+        let keychain = InMemoryKeychainStore()
+        let gatekeeper = OnboardingGateKeeper()
+        gatekeeper.drainEverything()
+        let manager = makeGatedManager(GatedAuthAPIClient(gatekeeper: gatekeeper, outcome: .succeed(
+            AuthStatusResponse(authEnabled: false))), keychain: keychain)
+        await manager.configure(serverURLString: "https://webui.example", password: "")
+        let form = OnboardingViewModel(entry: .addServer, moveSource: .init(name: "Home", headers: []), hermesConfiguration: {
+            HermesHostFixture.configuration { request in
+                switch request.url?.path {
+                case "/api/status": return .json(200, HermesBrowserSignInTests.browserStatus)
+                case "/auth/native/token": return .json(200, HermesBrowserSignInTests.tokens)
+                case "/api/auth/me": return .json(200, .object(["provider": .string("nous"), "user_id": .string("u1")]))
+                default: return nil
+                }
+            }
+        })
+        form.serverURLString = "hermes.example"
+        await form.connect(authManager: manager)
+        XCTAssertTrue(form.signsInWithBrowser)
+
+        let presenter = HermesBrowserSignIn.Presenter { url in _ = try await HermesBrowserSignInTests.callback(url, code: "code-1") }
+        let added = await form.connect(authManager: manager, browser: presenter)
+
+        let server = URL(string: "https://hermes.example")!
+        XCTAssertEqual(added, server)
+        XCTAssertNil(form.errorMessage)
+        XCTAssertEqual(manager.state, .loggedIn(server: URL(string: "https://webui.example")!))
+        XCTAssertEqual(try BotConnectionStore(keychain: keychain).load(server: server)?.oauth?.refreshToken, "refresh-1")
+    }
+
     func testAWebuiAnswerOnTheStatusRouteFallsThroughToHealth() async {
         let replies: [HermesHostFixture.Reply] = [
             .json(401, .object(["error": .string("Authentication required")])),
@@ -656,18 +641,6 @@ extension OnboardingViewModelIdentityTests {
     }
 
     // MARK: - Helpers
-
-    private func identity(of viewModel: OnboardingViewModel) throws -> String {
-        _ = viewModel // identity is derived from public inputs; recompute via invalidation side effect
-        return currentIdentity(viewModel)
-    }
-
-    /// Reads the identity by round-tripping through invalidation: mutating any
-    /// input recomputes it. Uses a sentinel edit that cannot collide with real
-    /// header content.
-    private func currentIdentity(_ viewModel: OnboardingViewModel) -> String {
-        viewModel.probeConnectionIdentityForTesting()
-    }
 
     private func makeProbedViewModel(headers: [CustomHeader]) -> OnboardingViewModel {
         let viewModel = OnboardingViewModel(

@@ -51,6 +51,10 @@ import OSLog
     /// runtimes do; one the host has since reaped stays here and is never in
     /// `session.active_list` again.
     private(set) var attachedRuntimes: Set<String> = []
+    /// Each Profile's `keepPlatformNote` check on this connection, by Profile: one that found the
+    /// note current or wrote it, or one still running, which a later call waits for. A failed
+    /// check is dropped, so each Profile is read once per sign-in unless a read fails.
+    private var platformNoteChecks: [String: Task<Bool, Never>] = [:]
     /// The standard-deadline session. The gateway socket opens on it, with its cookies.
     let session: URLSession
     /// Shares `session`'s cookie jar; only its deadlines differ.
@@ -78,11 +82,12 @@ import OSLog
     /// token is used, even when this connection was retired meanwhile: the host has already
     /// retired the sent one. `HermesConnections` saves it.
     var onRefreshTokenRotated: ((String) -> Void)?
-    /// Asked at this connection's first refresh for the refresh token to send instead of the
-    /// record's, until it answers. `HermesConnections` answers with the saved one, after waiting
+    /// Asked before each refresh for a refresh token saved since this connection last saw one,
+    /// such as the first one or one a Move to Hermes connection rotated (#1265), to send instead
+    /// of its own; nil keeps its own. `HermesConnections` answers from the Keychain, after waiting
     /// for a refresh a retired connection on the same server still has in flight; a Keychain
     /// read that fails throws, so the sign-in fails before any token is spent.
-    var initialRefreshToken: (() async throws -> String?)?
+    var savedRefreshToken: (() async throws -> String?)?
     /// The refresh in flight, which retiring this connection never cancels: once the host has
     /// the request it may already have rotated the token, and only its reply saves the new one.
     private(set) var refreshInFlight: Task<String, Error>?
@@ -129,6 +134,35 @@ import OSLog
     /// The gateway's report that a `session.resume` reached `runtime`.
     func noteAttached(_ runtime: String) {
         attachedRuntimes.insert(runtime)
+    }
+
+    /// Keeps `HermesREST.platformNote` as `profile`'s `platform_hints.hermex.append` (#1278), the
+    /// note the host gives an agent built for a session that runs as `HermesCall.source`. Reads
+    /// the config once per Profile on this connection and writes only a missing or changed note;
+    /// a call while that check runs waits for it, so no chat's agent is built before the note is
+    /// written. A failure only lets the next call try again: a chat opens without the note rather
+    /// than not at all.
+    func keepPlatformNote(profile: String) async {
+        guard !profile.isEmpty else { return }
+        let check = platformNoteChecks[profile] ?? Task { [weak self] in
+            await self?.writePlatformNoteIfChanged(profile: profile) ?? false
+        }
+        platformNoteChecks[profile] = check
+        if await !check.value, platformNoteChecks[profile] == check { platformNoteChecks[profile] = nil }
+    }
+
+    /// Whether `profile`'s config holds the current note, after writing it when it was missing or
+    /// different.
+    private func writePlatformNoteIfChanged(profile: String) async -> Bool {
+        do {
+            let config = try JSONDecoder().decode(BotJSON.self, from: try await data(.config(profile: profile)))
+            if config["platform_hints"][HermesCall.source]["append"].text != HermesREST.platformNote {
+                _ = try await data(.setPlatformNote(profile: profile))
+            }
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// The gateway's report that a `session.close` here ended `runtime`.
@@ -243,10 +277,9 @@ import OSLog
     /// 401 means the host no longer accepts the refresh token (`.signInExpired`); any other
     /// refusal is `.rejected` and leaves the token for the next sign-in.
     private func refresh(on session: URLSession) async throws {
-        if let source = initialRefreshToken {
+        if let source = savedRefreshToken {
             let saved = try await source()
             try checkCurrent()
-            initialRefreshToken = nil
             if let saved { connection.oauth?.refreshToken = saved }
         }
         guard let account = connection.oauth else { throw BotFailure.unsupported }
@@ -469,12 +502,14 @@ import OSLog
     /// Sends `request` and returns the final reply, whatever its status. A reply from another
     /// host means a redirect led to something in front of Hermes, such as an access proxy's
     /// sign-in page, and throws `.blocked`, like the status probe. Only the host is compared:
-    /// a same-host redirect from http to https is not a proxy.
+    /// a same-host redirect from http to https is not a proxy. A 3xx reply is a redirect the
+    /// guard refused, because it would have carried a body off the origin, and is `.blocked` too.
     private nonisolated static func exchange(_ request: URLRequest, on session: URLSession,
                                              redirectGuard: CrossOriginHeaderStripper) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request, delegate: redirectGuard)
         guard let response = response as? HTTPURLResponse else { throw BotFailure.transport }
         if let final = response.url?.host, final.lowercased() != request.url?.host?.lowercased() { throw BotFailure.blocked }
+        if (300..<400).contains(response.statusCode) { throw BotFailure.blocked }
         return (data, response)
     }
 
@@ -504,8 +539,10 @@ import OSLog
 /// across those), retires the old connection first, so no cookie, sign-in, socket or late
 /// reply crosses servers, accounts, credentials or headers.
 /// Credentials and headers are compared on the live connection and never kept in a key.
-/// A browser sign-in's connection starts from the refresh token saved in the Keychain, not
-/// the one in `saved`, and saves each rotated one there (#708) (`keepRefreshTokens`).
+/// A browser sign-in's connection refreshes from the refresh token saved in the Keychain, not
+/// the one in `saved`, and saves each rotated one there (#708) (`keepRefreshTokens`). So does
+/// one made beside the current one (`ownConnection`), whose rotations the current one then
+/// refreshes from.
 @MainActor final class HermesConnections {
     static let shared = HermesConnections()
     /// Told which configured server's sign-in the host refused: `.rejected(401)` for a
@@ -517,9 +554,9 @@ import OSLog
     private let store: BotConnectionStore
     private var server: String?
     private weak var current: HermesConnection?
-    /// The refresh the last retired connection still had in flight, and its server, so the
-    /// next connection there reads the token it rotated to, not the one it spent.
-    private var retiredRefresh: (server: String, task: Task<String, Error>)?
+    /// The refresh each server's last retired connection still had in flight, so the next
+    /// refresh there, by any connection, reads the token it rotated to, not the one it spent.
+    private var retiredRefreshes: [String: Task<String, Error>] = [:]
 
     /// `configuration` makes each new connection's URL session setup, with a cookie jar of
     /// its own; tests script the host with it. `keychain` holds the saved records whose
@@ -539,6 +576,22 @@ import OSLog
         current = fresh
         self.server = server.absoluteString
         return fresh
+    }
+
+    /// A connection to `saved` of the caller's own, beside `server`'s current one, which it
+    /// never replaces or retires: Move to Hermes's destination (#1265). A browser sign-in's
+    /// keeps refresh tokens as the current one does. `retire(own:server:)` ends it.
+    func ownConnection(for saved: BotConnection, server: URL) -> HermesConnection {
+        let own = HermesConnection(connection: saved, configuration: configuration())
+        if saved.oauth != nil { keepRefreshTokens(of: own, server: server) }
+        return own
+    }
+
+    /// Ends a connection `ownConnection` made, leaving any refresh it has in flight for the
+    /// next connection on `server` to wait for.
+    func retire(own: HermesConnection, server: URL) {
+        if let task = own.refreshInFlight { retiredRefreshes[server.absoluteString] = task }
+        own.retire()
     }
 
     /// Closes the current connection's gateway socket, silently, because the app went to
@@ -570,24 +623,26 @@ import OSLog
 
     private func retireCurrent() {
         guard let current else { return }
-        if let task = current.refreshInFlight, let server { retiredRefresh = (server, task) }
+        if let task = current.refreshInFlight, let server { retiredRefreshes[server] = task }
         current.retire()
     }
 
-    /// Starts `fresh`'s refreshes from the token saved for it, once any refresh a retired
-    /// connection on `server` still has in flight has saved its own, and saves each rotated
-    /// one. A save only replaces the token this connection last saw saved, so a record
-    /// removed or signed in again keeps what it has, and a failed save is retried at the
-    /// next rotation.
+    /// Starts each of `fresh`'s refreshes from the token saved for it when that changed since
+    /// it last looked, once any refresh a retired connection on `server` still has in flight
+    /// has saved its own, and saves each rotated one. That refresh is looked up at each refresh,
+    /// not when `fresh` is made, since a connection beside it can be retired later (#1265).
+    /// A save only replaces the token this connection last saw saved, so a record removed or
+    /// signed in again keeps what it has, and a failed save is retried at the next rotation,
+    /// from the token in memory.
     private func keepRefreshTokens(of fresh: HermesConnection, server: URL) {
         let store = store, id = fresh.connection.id, serial = fresh.serial
-        let prior = retiredRefresh?.server == server.absoluteString ? retiredRefresh?.task : nil
         var saved: String?
-        fresh.initialRefreshToken = {
-            _ = try? await prior?.value
-            guard let record = try store.load(server: server), record.id == id else { return nil }
-            saved = record.oauth?.refreshToken
-            return saved
+        fresh.savedRefreshToken = { [weak self] in
+            _ = try? await self?.retiredRefreshes[server.absoluteString]?.value
+            guard let record = try store.load(server: server), record.id == id,
+                  let token = record.oauth?.refreshToken, token != saved else { return nil }
+            saved = token
+            return token
         }
         fresh.onRefreshTokenRotated = { rotated in
             guard let previous = saved else { return }

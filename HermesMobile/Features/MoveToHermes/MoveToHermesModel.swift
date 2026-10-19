@@ -6,25 +6,56 @@ import Observation
 import SwiftData
 
 /// How the guided sheet opens (#1218): from a webui server's Move card, a banner's Resume or
-/// Details, a finished report, or Copy Missing Chats Again.
+/// Details, a finished report, Copy Missing Chats Again, or the offer after a Hermes sign-in
+/// (`MoveToHermesOffer`), which names the server signed in to, or another report's "Move
+/// <next> Next".
 enum MoveToHermesEntry: Equatable {
     case start, resume, details, copyMissingAgain
+    case offer(destinationID: String)
+    /// Opens at the host step even with a saved Hermes sign-in, so nothing is checked until
+    /// the user picks a host (#1268).
+    case next
+}
+
+/// "Bring your chats" after a Hermes sign-in (#1266): the Hermes server just signed in to, and
+/// the first webui server in the list that hasn't moved, so has no move record. One at a time;
+/// `AuthManager` ends it when either server changes.
+struct MoveToHermesOffer: Identifiable, Equatable {
+    let destinationID: String
+    let sourceID: String
+    var id: String { "\(sourceID)\n\(destinationID)" }
+
+    /// Nil when every webui server has a move record.
+    init?(destinationID: String, servers: [ServerAccount]) {
+        let moved = Set(servers.flatMap { $0.movedWebuiServers.map(\.sourceServerID) })
+        guard let source = servers.first(where: { $0.kind == .webui && !moved.contains($0.id) }) else { return nil }
+        self.destinationID = destinationID
+        self.sourceID = source.id
+    }
+}
+
+/// The one-time "Move <server> to Hermes" question for a webui server (#1267).
+struct MoveToHermesQuestion: Identifiable, Equatable {
+    let sourceID: String
+    /// The webui server has a Bots connection, so Move to Hermes goes straight to the scan
+    /// instead of the Hermes sign-in; the sheet's second line says which.
+    let hasBotsSignIn: Bool
+    var id: String { sourceID }
 }
 
 /// The guided Move to Hermes sheet's model (#1218). It reads what Review shows without changing
-/// either server: the host's own sign-in check (refusals R1 to R3), Profiles and a scan, then the
+/// either server: the host's own sign-in check (refusals R1 and R3), Profiles and a scan, then the
 /// webui's running chats (R4). Move hands the frozen Review to `MoveToHermesRunner.start`, which
 /// owns everything after it; the sheet then shows the runner's state.
 ///
 /// The sheet owns every task this runs (`perform`), so closing it (`close`) cancels the scan,
 /// which changes nothing, or pauses a move, which Resume picks up. Done acknowledges the report,
-/// then switches to the destination; nothing switches servers before that.
+/// then switches to the destination; nothing switches servers before that. The report can also
+/// remove the webui server or move the next one (#1268).
 @MainActor @Observable final class MoveToHermesModel {
     enum Refusal: Equatable {
         /// R1: the host takes no password (`auth_required` false).
         case noSignIn
-        /// R2: the host signs in only through a browser.
-        case singleSignOn
         /// R3: the host runs this release, older than `HermesCompatibility.minimumVersion`.
         case outdated(String)
         /// R4: this many of the webui server's chats are streaming a reply.
@@ -72,6 +103,8 @@ enum MoveToHermesEntry: Equatable {
         let connection: BotConnection
         let version: String?
         let hermesProfiles: [String]
+        /// The Profile `profiles.list` marks `is_default`, which an unmatched webui Profile starts on.
+        let hermesDefault: String?
         let profiles: [ProfileChoice]
         let scan: MoveToHermesScan.Result
         /// Webui chats with a draft on this iPhone.
@@ -117,6 +150,9 @@ enum MoveToHermesEntry: Equatable {
     private(set) var runner: MoveToHermesRunner?
     /// The paused move's counts (finish-early A1), read after each pass.
     private(set) var snapshot: MoveToHermesRunner.Snapshot?
+    /// The webui server's saved Hermes sign-in, which Move Next's host step offers first instead
+    /// of scanning with it (`.next`).
+    private(set) var savedHost: BotConnection?
 
     @ObservationIgnored private let auth: AuthManager
     @ObservationIgnored private let environment: Environment
@@ -138,10 +174,14 @@ enum MoveToHermesEntry: Equatable {
 
     // MARK: Opening
 
-    /// Shows where this webui server's move stands, or starts one.
+    /// Shows where this webui server's move stands, or starts one. The offer after a sign-in
+    /// scans the server it names.
     func open(_ entry: MoveToHermesEntry) {
         guard let held = auth.moveRecord(forSource: sourceID) else {
-            return resolveHost()
+            if case .offer(let destinationID) = entry, let server = hostChoices.first(where: { $0.id == destinationID }) {
+                return choose(server)
+            }
+            return resolveHost(scanning: entry != .next)
         }
         destinationID = held.destination.id
         destinationName = Self.name(held.destination)
@@ -165,20 +205,28 @@ enum MoveToHermesEntry: Equatable {
         }
     }
 
-    /// The webui server's saved Hermes sign-in names the host; without one, D asks.
-    private func resolveHost() {
+    /// The webui server's saved Hermes sign-in names the host; without one, D asks. Move Next
+    /// (`scanning` false) shows D with the saved sign-in first instead.
+    private func resolveHost(scanning: Bool) {
         guard let sourceURL, let saved = try? BotConnectionStore(keychain: auth.keychain).load(server: sourceURL) else {
+            phase = .chooseHost
+            return
+        }
+        guard scanning else {
+            savedHost = saved
             phase = .chooseHost
             return
         }
         use(saved)
     }
 
-    /// Hermes servers D offers: signed in, so the commit can adopt them.
+    /// Hermes servers D offers: signed in, so the commit can adopt them. The saved sign-in's
+    /// host is offered once, as `savedHost`.
     var hostChoices: [ServerAccount] {
         let store = BotConnectionStore(keychain: auth.keychain)
+        let saved = savedHost.map(MoveToHermesRunner.destinationID)
         return auth.servers.filter { server in
-            server.kind == .hermes && URL(string: server.id).flatMap { try? store.load(server: $0) } != nil
+            server.kind == .hermes && server.id != saved && URL(string: server.id).flatMap { try? store.load(server: $0) } != nil
         }
     }
 
@@ -190,8 +238,17 @@ enum MoveToHermesEntry: Equatable {
         use(saved)
     }
 
-    /// D's new sign-in, checked by the connect form and saved only by the commit.
-    func useVerified(_ connection: BotConnection) { use(connection) }
+    /// D's pick of the saved sign-in Move Next offers.
+    func useSaved() {
+        if let savedHost { use(savedHost) }
+    }
+
+    /// D's "Sign in to a Hermes host": the normal Hermes sign-in added the server at
+    /// `address` without switching to it, so it is scanned as a configured server.
+    func signedIn(at address: URL) {
+        guard let server = auth.servers.first(where: { $0.id == address.absoluteString }) else { return }
+        choose(server)
+    }
 
     /// Scans against `connection`'s host. A Hermes server already configured there is the
     /// destination, scanned with its own sign-in; the commit adopts it.
@@ -233,7 +290,6 @@ enum MoveToHermesEntry: Equatable {
             guard !Task.isCancelled else { return }
             switch error as? BotFailure {
             case .unsupported?: phase = .refused(.noSignIn)
-            case .browserSignIn?: phase = .refused(.singleSignOn)
             case .outdated(let version)?: phase = .refused(.outdated(version))
             default: checking.hostError = BotConnectionAdvice.message(for: error, address: connection.address)
             }
@@ -242,6 +298,7 @@ enum MoveToHermesEntry: Equatable {
         checking.signedIn = true
         let rows = try? await destination.transport.call(.profilesList(includeSessions: false), validateDispatch: nil)
         let hermesProfiles = rows?["profiles"].list?.compactMap { $0["name"].text } ?? []
+        let hermesDefault = rows?["profiles"].list?.first { $0["is_default"].flag == true }?["name"].text
         guard !Task.isCancelled else { return }
         guard !hermesProfiles.isEmpty else {
             checking.hostError = String(localized: "Couldn’t read \(destinationName)’s Profiles. Try again.")
@@ -272,17 +329,22 @@ enum MoveToHermesEntry: Equatable {
         }
         guard !Task.isCancelled else { return }
         let record = auth.moveRecord(forSource: sourceID)?.record
-        review = Self.review(connection: connection, hermesProfiles: hermesProfiles, webuiProfiles: webuiProfiles,
-                             scan: result, drafted: drafted, record: record)
-        mapping = Self.initialMapping(profiles: review?.profiles ?? [], record: record)
+        review = Self.review(connection: connection, hermesProfiles: hermesProfiles, hermesDefault: hermesDefault,
+                             webuiProfiles: webuiProfiles, scan: result, drafted: drafted, record: record)
+        mapping = Self.initialMapping(profiles: review?.profiles ?? [], hermesDefault: review?.hermesDefault, record: record)
         phase = .review
+    }
+
+    /// The webui server's own custom headers, never the active server's. The scan sends them, and
+    /// D's sign-in offers them as a tap (#1266).
+    var sourceHeaders: [CustomHeader] {
+        [CustomHeader].decodeFromStorage(try? auth.keychain.load(.customHeaders, scope: sourceID))
     }
 
     /// A read-only client on the webui server's own headers and sign-in, never the active server's.
     private func webuiClient(_ sourceURL: URL) -> (client: APIClient, session: URLSession) {
-        let headers = [CustomHeader].decodeFromStorage(try? auth.keychain.load(.customHeaders, scope: sourceID))
-        return APIClient.moveCopyClient(baseURL: sourceURL, headers: headers, cookies: environment.runner.cookies(sourceURL),
-                                        configuration: environment.runner.webuiConfiguration)
+        APIClient.moveCopyClient(baseURL: sourceURL, headers: sourceHeaders, cookies: environment.runner.cookies(sourceURL),
+                                 configuration: environment.runner.webuiConfiguration)
     }
 
     /// The webui's running chats now, with this iPhone's running Live Activities for it, read
@@ -298,20 +360,25 @@ enum MoveToHermesEntry: Equatable {
 
     /// Review's Profiles: every webui Profile its list or the scan names, with its chat count.
     /// Copy Missing Chats Again lists the record's Profiles, whose mapping can't change.
-    static func review(connection: BotConnection, hermesProfiles: [String], webuiProfiles: [String],
+    static func review(connection: BotConnection, hermesProfiles: [String], hermesDefault: String?, webuiProfiles: [String],
                        scan: MoveToHermesScan.Result, drafted: Set<String>, record: MovedWebuiServer?) -> Review {
         let counts = Dictionary(grouping: scan.entries, by: \.chat.profile).mapValues(\.count)
         let names = record.map { $0.profiles.map(\.source) }
             ?? Array(Set(webuiProfiles).union(counts.keys)).sorted { ($0 == "default" ? "" : $0) < ($1 == "default" ? "" : $1) }
         let profiles = names.map { ProfileChoice(source: $0, chats: counts[$0] ?? 0, sameName: hermesProfiles.contains($0)) }
         return Review(connection: connection, version: connection.hermesVersion, hermesProfiles: hermesProfiles,
+                      hermesDefault: hermesDefault.flatMap { hermesProfiles.contains($0) ? $0 : nil },
                       profiles: profiles, scan: scan, drafted: drafted, isRepeat: record != nil)
     }
 
-    /// A same-name Hermes Profile is preselected; anything else waits for a choice.
-    static func initialMapping(profiles: [ProfileChoice], record: MovedWebuiServer?) -> [String: MovedWebuiProfile.Destination] {
+    /// A same-name Hermes Profile is preselected, and anything else the host's default Profile
+    /// (#1266); Review can change either. Without a default, an unmatched Profile waits for a choice.
+    static func initialMapping(profiles: [ProfileChoice], hermesDefault: String?,
+                               record: MovedWebuiServer?) -> [String: MovedWebuiProfile.Destination] {
         if let record { return Dictionary(record.profiles.map { ($0.source, $0.destination) }, uniquingKeysWith: { first, _ in first }) }
-        return Dictionary(uniqueKeysWithValues: profiles.filter(\.sameName).map { ($0.source, .hermes(profile: $0.source)) })
+        return Dictionary(uniqueKeysWithValues: profiles.compactMap { choice in
+            (choice.sameName ? choice.source : hermesDefault).map { (choice.source, .hermes(profile: $0)) }
+        })
     }
 
     /// Review's counts under the current mapping (A2).
@@ -377,14 +444,43 @@ enum MoveToHermesEntry: Equatable {
     /// Finish with What's Done: sends nothing, then shows the report.
     func finishEarly() { runPass { await $0.finishEarly() } }
 
-    /// Done: deletes the finished move's journal, then makes the destination the active server.
+    /// Done: acknowledges the report, then makes the destination the active server.
     func done() {
-        work?.cancel()
-        runner?.acknowledge()
+        acknowledge()
         if let destinationID, let destination = auth.servers.first(where: { $0.id == destinationID }) {
             auth.switchActiveServer(to: destination)
         }
+    }
+
+    /// Deletes the finished move's journal, so its report stops waiting.
+    func acknowledge() {
+        work?.cancel()
+        runner?.acknowledge()
         refreshNotices()
+    }
+
+    /// "Move <next> Next": acknowledges the report without switching servers, then returns
+    /// `nextSource`'s model, which the sheet shows instead. It opens at the host step, so
+    /// nothing is checked until the user picks a host.
+    func moveNext() -> MoveToHermesModel? {
+        guard let next = nextSource else { return nil }
+        acknowledge()
+        let model = MoveToHermesModel(auth: auth, sourceID: next.id, environment: environment)
+        model.open(.next)
+        return model
+    }
+
+    /// Another configured webui server that hasn't moved, which the report offers to move next.
+    var nextSource: ServerAccount? {
+        auth.servers.first { $0.kind == .webui && $0.id != sourceID && auth.moveRecord(forSource: $0.id) == nil }
+    }
+
+    /// Remove <webui server>…: switches to the destination as Done does, then removes the webui
+    /// server as Remove This Server does. The destination keeps the move record (#1224).
+    func removeSource(modelContext: ModelContext) async {
+        guard let source else { return }
+        done()
+        await MoveToHermesRemoval.remove(source, auth: auth, modelContext: modelContext)
     }
 
     /// Scans again and copies only what the destination still lacks, with the record's mapping.
@@ -603,6 +699,21 @@ struct MoveToHermesNotice: Equatable {
     func noteClosed(source: String, destination: String) { closed.insert(Self.key(source, destination)) }
     func clearClosed(source: String, destination: String) { closed.remove(Self.key(source, destination)) }
     func wasClosed(source: String, destination: String) -> Bool { closed.contains(Self.key(source, destination)) }
+
+    /// How many of each server's chat lists are on screen. A webui list reports its appearance
+    /// (`noteChatList`): on iPhone it disappears under a pushed chat, on iPad with its sidebar.
+    /// Counted, so a rebuild's new list appearing before the old one leaves doesn't hide it.
+    private var chatListsOnScreen: [String: Int] = [:]
+
+    func noteChatList(of serverID: String, onScreen: Bool) {
+        let count = (chatListsOnScreen[serverID] ?? 0) + (onScreen ? 1 : -1)
+        chatListsOnScreen[serverID] = count > 0 ? count : nil
+    }
+
+    /// Whether `serverID`'s chat list is on screen, which the one-time question waits for.
+    func showsChatList(of serverID: String?) -> Bool {
+        serverID.map { chatListsOnScreen[$0] != nil } ?? false
+    }
 
     /// The Settings card's notice for a webui server, or nil before any move.
     func card(forSource sourceID: String, in servers: [ServerAccount]) -> MoveToHermesNotice? {

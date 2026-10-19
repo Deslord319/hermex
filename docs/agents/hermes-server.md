@@ -109,9 +109,10 @@ user id as username, no password) and signs in with the bearer, so the version g
 install check and identity check apply. Closing the sheet shows nothing; a sheet closed
 without a code or a refused code shows `.browserSignInFailed`. Signing the same account
 in again from the server's form keeps the connection's UUID. A webui server's Bots
-connection and Move to Hermes's destination keep to a password sign-in: Move saves its
-destination's record long after the check, apart from the connection that would rotate
-its token, so a browser host is refused there with `.browserSignIn`. Not built: a
+connection keeps to a password sign-in. Move to Hermes's host choice opens this same
+form (#1266), which saves the destination as a Hermes server at once, without switching
+to it, so a browser host can be a destination and its own connection rotates the token
+the move then refreshes from (#1265). Not built: a
 foreground rebind of the listener and a background task (on the 8.1 device the socket
 survived 82 s of suspension; a reclaimed one shows "can't connect" in the sheet, and
 signing in again recovers) and a revoke at sign-out (sign-out deletes the record and
@@ -187,11 +188,14 @@ rotated one (`BotConnectionStore.saveRotatedRefreshToken`, only while the record
 that connection holding that token) before the access token is used, and sends the
 access token, held in memory only, as `Authorization: Bearer` on every signed-in request;
 the socket upgrades still present a ticket. Each launch refreshes once, and a signed-in
-401 refreshes again and resends, as a password connection signs in again. A new
-connection reads the refresh token from the Keychain, never from a copy of the record,
-and `adopt` ignores it. Retiring a connection never cancels its refresh in flight (the
-host may already have rotated the token), and the next connection on that server waits
-for it to save before reading the token. A save that fails is retried at the next
+401 refreshes again and resends, as a password connection signs in again. A connection
+reads the refresh token from the Keychain, never from a copy of the record, before its
+first refresh and before any later one after another connection saved a newer token, and
+`adopt` ignores it. Move to Hermes refreshes on a connection of its own beside the
+server's (#1265), and the two share the saved token this way. Retiring a connection never
+cancels its refresh in flight (the host may already have rotated the token), and every
+other connection on that server, whenever it was made, waits for it to save before its next
+refresh reads the token. A save that fails is retried at the next
 rotation. A 401 from the refresh is `.signInExpired`, which signs the active
 Hermes server out to its sign-in form. No extension or App Intent signs in to Hermes, so
 the app is the token's only user.
@@ -213,8 +217,10 @@ authorization while allowing Cloudflare Access's JSON `Authorization` form; the 
 says why under the row and keeps Connect off. Only one of `CF-Access-Client-Id` and
 `CF-Access-Client-Secret` warns but still connects. A header change keeps the UUID,
 and with it drafts, cache and push pairing; it only retires the live connection. A
-saved list the policy later refuses sends none. The webui's custom headers are never
-a source, and headers are never logged.
+saved list the policy later refuses sends none. The webui's custom headers are a source
+only on a tap: opened from Move to Hermes, the form offers "Use <webui server>'s
+Headers", which fills that server's rows in visibly (#1266). The address is never
+copied. Headers are never logged.
 
 A browser sign-in's own bearer is its `Authorization`, so on that connection the policy
 refuses any custom `Authorization`, Cloudflare Access's JSON form included; Access takes
@@ -288,6 +294,21 @@ subprotocols in its `Sec-WebSocket-Protocol` header, which is where
 `URLSessionWebSocketTask` takes them from a request; the host splits that header
 on commas (`hermes_cli/web_server_chat.py`). JSON-RPC uses text frames. There is no bootstrap-token,
 OAuth, webui fallback, server provisioning or competing-backend path.
+
+## The agent's surface note
+
+The host tells each agent what screen it writes to through a per-surface note in its system
+prompt, picked by the session's `source`. A session with none runs as `tui`, whose note says
+`MEDIA:` tags print as text and files must be delivered as paths. So every `session.create` and
+`session.resume` Hermex sends carries `source: "hermex"` (`HermesCall.source`), and a branch
+inherits its parent's. The host has no built-in note for that name, so Hermex keeps its own in
+each Profile's config as `platform_hints.hermex.append` (`HermesREST.platformNote`), which the
+host appends for that source (#1278). `HermesConnection.keepPlatformNote` reads the config once
+per Profile per sign-in, before the first attach and before a new bot's chat is made, and writes
+the note only when it is missing or different. `PUT /api/config` deep-merges, so nothing else in
+the file changes. The note is read when the host builds an agent, so a runtime the host built
+earlier keeps the old note until the host reaps it. Hermex owns `append`: a user's own text for
+Hermex sessions goes in `platform_hints.hermex.replace`, which the host puts before it.
 
 ## Handshake
 
@@ -401,6 +422,23 @@ describe RPC, and `gateway.ready` lists no methods.
 | `GET /api/plugins/<name>/…` | 404 `{"detail": "Plugin not found"}` | The plugin is off or not installed (`HermexPushPlugin.missingRoute`, Kanban). |
 | `GET /api/plugins/<name>/…` | 404 `{"detail": "No such API endpoint: …"}` | The dashboard never mounted the plugin's routes: it is new on disk and the host needs a restart, or the host lacks it (`kanban.md`, Absent plugin). |
 | `GET /api/plugins/hermex-push/capabilities` | `{plugin_version, routes}` / any 404 | The companion routes the loaded plugin mounts / none, so the feature doesn't show (`bots.md` § Push provisioning). |
+| `GET /api/sessions/{id}/mutation-snapshot` | 200 / a catch-all 404 (`No such API endpoint`, or `serve`'s `Headless backend`) | The host fences session writes / it is older and takes them bare (§ Session write fence). |
+
+## Session write fence
+
+hermes-agent fences REST session writes (#1300): `PATCH /api/sessions/{id}` and
+`POST /api/sessions/import` must carry `request_id` and `expected_revision`, or the host answers
+409 `client_upgrade_required` (neither) or `mutation_identity_required` (one). `BotClient` sends a
+fresh UUID as `request_id` on every write. A PATCH's `expected_revision` is the session's
+`runtime_revision`, read from `mutation-snapshot` right before the write, because any activity on
+the session moves it and a cached list row's value goes stale. An import always sends 0, the
+revision of an anchor id the host doesn't have. Hermex never sends `expected_generation`. When the
+snapshot route answers a catch-all 404 (`hermes dashboard`'s "No such API endpoint" or `hermes serve`'s
+"Headless backend…"), the host predates the fence and the PATCH goes out bare;
+older hosts ignore the extra fields on an import. A 409 (`revision_conflict`, `stale_generation`,
+`admission_conflict`, `session_busy`, or an upgrade reason) is a `HermesSessionFenceRefusal` and is
+never resent: the row action rolls back and reloads, and Move to Hermes leaves the batch uncertain
+for its next run.
 
 ## Plugin routes need a host restart
 

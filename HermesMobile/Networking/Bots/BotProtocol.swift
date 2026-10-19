@@ -176,6 +176,9 @@ enum BotConnectionAdvice {
     /// One file the host serves by `path` under `context`'s Profile and session. `limit` caps a
     /// preview's bytes; nil reads the whole file, as a MEDIA file's export does (#1112).
     func artifactData(path: String, context: BotArtifactContext, limit: Int?) async throws -> Data
+    /// Makes sure the agents of `profile`'s sessions are told what Hermex shows
+    /// (`HermesConnection.keepPlatformNote`). Never throws: a chat opens without the note.
+    func keepPlatformNote(profile: String) async
     /// Removes a Profile on the host over the authenticated HTTP session. Only
     /// a 200 with `ok` counts as deleted; anything else leaves the bot in place.
     func deleteProfile(_ name: String) async throws
@@ -197,7 +200,8 @@ enum BotConnectionAdvice {
     func sessionScanPage(profile: String, offset: Int) async throws -> HermesScanPage
     /// Writes one change to a session (`HermesREST.updateSession`, #1046, #1048) and returns the
     /// title the host keeps. A change the host refuses with its reason, such as a title already
-    /// in use, throws `HermesSessionRefusal`.
+    /// in use, throws `HermesSessionRefusal`; one its write fence refuses (#1300), such as a
+    /// session that changed since the write read it, throws `HermesSessionFenceRefusal`.
     @discardableResult
     func updateSession(_ change: HermesSessionChange, key: String, profile: String) async throws -> String?
     /// The session's row and messages as the host exports them (`HermesREST.sessionExport`, #1048).
@@ -207,7 +211,8 @@ enum BotConnectionAdvice {
     func sessionRow(key: String, profile: String) async throws -> BotJSON?
     /// Sends one session import, its JSON `body` already encoded (`HermesREST.importSessions`,
     /// #1051), and returns the host's result. A payload the host refuses throws its reason as
-    /// `HermesSessionRefusal`, with every session it named in `entries` (#1213).
+    /// `HermesSessionRefusal`, with every session it named in `entries` (#1213); one its write
+    /// fence refuses throws `HermesSessionFenceRefusal` (#1300).
     func importSessions(body: Data) async throws -> BotJSON
     /// `profile`'s sessions matching `query`, in the host's order, at most `limit`
     /// (`HermesREST.sessionSearch`, #1053).
@@ -232,6 +237,8 @@ extension BotTransport {
     func artifactData(path: String, context: BotArtifactContext, limit: Int?) async throws -> Data {
         throw BotArtifactFailure.unavailable
     }
+
+    func keepPlatformNote(profile: String) async {}
 
     /// A preview's download: at most 25 MB.
     func artifactData(path: String, context: BotArtifactContext) async throws -> Data {

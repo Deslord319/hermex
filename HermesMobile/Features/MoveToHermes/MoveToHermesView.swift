@@ -5,12 +5,15 @@ import UIKit
 /// The guided Move to Hermes sheet (#1218): host choice (D), the checking scan (A1b), refusals
 /// (R), Review with Profile mapping (A2, M), progress (A3), paused details and pauses (finish-early
 /// A, 3A, 4C), and the report kept until Done (A4). Static rows, no spinners or repeating
-/// animation. Closing it pauses a move; Done switches to the destination.
+/// animation. Closing it pauses a move; Done switches to the destination. The report can also
+/// remove the webui server or move the next one in this sheet (#1268).
 struct MoveToHermesSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @State private var model: MoveToHermesModel
     @State private var isSigningIn = false
     @State private var isConfirmingFinish = false
+    @State private var isConfirmingRemove = false
     @State private var copiedPrompt = false
     private let auth: AuthManager
     private let entry: MoveToHermesEntry
@@ -31,13 +34,23 @@ struct MoveToHermesSheet: View {
         .task { model.open(entry) }
         .onDisappear { model.close() }
         .sheet(isPresented: $isSigningIn) {
-            AddServerView(authManager: auth) { model.useVerified($0) }
+            AddServerView(authManager: auth, moveSource: .init(name: source, headers: model.sourceHeaders)) {
+                model.signedIn(at: $0)
+            }
         }
         .alert("Finish without the rest?", isPresented: $isConfirmingFinish) {
             Button("Finish Move", role: .destructive) { model.finishEarly() }
             Button("Keep Paused", role: .cancel) {}
         } message: {
             Text(finishMessage)
+        }
+        .alert(String(localized: "Remove \(source)?"), isPresented: $isConfirmingRemove) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove Server", role: .destructive) { removeSource() }
+        } message: {
+            if let account = model.source {
+                Text(MoveToHermesRemoval.message(for: account, servers: auth.servers) ?? "")
+            }
         }
     }
 
@@ -62,11 +75,10 @@ struct MoveToHermesSheet: View {
         switch model.screen {
         case .chooseHost, .checking, .review, .refused:
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-        case .finished:
-            ToolbarItem(placement: .confirmationAction) { Button("Done") { finish() } }
         case .paused:
             ToolbarItem(placement: .confirmationAction) { Button("Close") { dismiss() } }
-        case .loading, .progress, .couldNotStart:
+        // The report's Done is its first button (5A).
+        case .loading, .progress, .finished, .couldNotStart:
             ToolbarItem(placement: .cancellationAction) { EmptyView() }
         }
     }
@@ -81,16 +93,32 @@ struct MoveToHermesSheet: View {
         case .review: review
         case .progress(let step): progress(step)
         case .paused(let pause): paused(pause)
-        case .finished(let report): MoveToHermesReportView(report: report, source: source, destination: destination,
-                                                          keptProfiles: keptProfiles, canCopyAgain: model.source != nil,
-                                                          copyAgain: model.copyMissingChatsAgain, open: finish)
+        case .finished(let report):
+            MoveToHermesReportView(report: report, source: source, destination: destination, keptProfiles: keptProfiles,
+                                   canCopyAgain: model.source != nil, next: model.nextSource.map(MoveToHermesModel.name),
+                                   copyAgain: model.copyMissingChatsAgain, done: finish, moveNext: moveNext,
+                                   remove: model.source == nil ? nil : { isConfirmingRemove = true })
         case .couldNotStart(let failure): couldNotStart(failure)
         }
     }
 
-    /// Done and Open both acknowledge the report, then switch to the destination.
+    /// Done acknowledges the report, then switches to the destination.
     private func finish() {
         model.done()
+        dismiss()
+    }
+
+    /// "Move <next> Next" shows the next webui server's move in this sheet.
+    private func moveNext() {
+        if let next = model.moveNext() { model = next }
+    }
+
+    /// Remove's confirmation: switches to the destination as Done does, then removes the webui
+    /// server. The removal outlives the sheet, which the switch may tear down.
+    private func removeSource() {
+        let model = model
+        let modelContext = modelContext
+        Task { await model.removeSource(modelContext: modelContext) }
         dismiss()
     }
 
@@ -103,10 +131,17 @@ struct MoveToHermesSheet: View {
     private var hostChoice: some View {
         List {
             Section {
-                Text("\(source) has no saved Hermes sign-in. Pick the host that should take its chats.")
+                Text(model.savedHost == nil ? String(localized: "\(source) has no saved Hermes sign-in. Pick the host that should take its chats.")
+                                            : String(localized: "Pick the host that should take \(source)’s chats. The first is its saved Hermes sign-in."))
                     .foregroundStyle(.secondary)
             }
             Section {
+                if let saved = model.savedHost {
+                    Button { model.useSaved() } label: {
+                        MoveToHermesRow(title: saved.name.isEmpty ? Self.hostAndPort(saved.address.absoluteString) : saved.name,
+                                        detail: Self.hostAndPort(saved.address.absoluteString), chevron: true)
+                    }
+                }
                 ForEach(model.hostChoices) { server in
                     Button { model.choose(server) } label: {
                         MoveToHermesRow(title: MoveToHermesModel.name(server),
@@ -116,7 +151,7 @@ struct MoveToHermesSheet: View {
                 }
                 Button { isSigningIn = true } label: {
                     MoveToHermesRow(title: String(localized: "Sign in to a Hermes host"),
-                                    detail: String(localized: "Address, username and password"), chevron: true)
+                                    detail: String(localized: "Password or browser sign-in"), chevron: true)
                 }
             }
         }
@@ -170,12 +205,6 @@ struct MoveToHermesSheet: View {
                 }
                 .buttonStyle(.bordered)
                 Button("Try Again") { model.scan() }.buttonStyle(.borderedProminent)
-            }
-        case .singleSignOn:
-            MoveToHermesNoticeScreen(
-                tint: .orange, title: String(localized: "This host signs in with single sign-on"),
-                message: String(localized: "Hermex can’t sign in to it yet. Add a password sign-in on the host to move now. \(source) keeps working as it is.")) {
-                Button("OK") { dismiss() }.buttonStyle(.borderedProminent)
             }
         case .outdated(let version):
             MoveToHermesNoticeScreen(
@@ -388,7 +417,7 @@ struct MoveToHermesSheet: View {
             Section {
                 if signedOut, let destinationID = model.destinationID, let url = URL(string: destinationID) {
                     NavigationLink("Sign In…") {
-                        BotConnectionView(server: url) { auth.hermesSignInSaved(server: url) }
+                        BotConnectionView(server: url) { auth.hermesSignInSaved(server: url, offersMove: false) }
                     }
                 }
                 if model.source != nil {
@@ -525,15 +554,22 @@ private struct MoveToHermesProfilePicker: View {
 
 // MARK: - A4
 
-/// The move's report, kept until Done (A4, A4b, finish-early A3).
+/// The move's report, kept until Done (A4, A4b, finish-early A3), with its actions stacked
+/// below (5A): Done, "Move <next> Next" while another webui server hasn't moved, and Remove
+/// while the webui server is still configured.
 private struct MoveToHermesReportView: View {
     let report: MoveToHermesReport
     let source: String
     let destination: String
     let keptProfiles: [String]
     let canCopyAgain: Bool
+    /// The next webui server's name, while one hasn't moved.
+    let next: String?
     let copyAgain: () -> Void
-    let open: () -> Void
+    let done: () -> Void
+    let moveNext: () -> Void
+    /// Asks to remove the webui server; nil once it is gone.
+    let remove: (() -> Void)?
 
     var body: some View {
         List {
@@ -575,13 +611,39 @@ private struct MoveToHermesReportView: View {
                                      detail: String(localized: "\(destination) is a different host from \(source). Its own notifications are unchanged; set them up in its Settings if they’re off. \(source) keeps its own until you remove it."))
                 }
             }
-            Section {
-                if canCopyAgain, report.notCopied.count + report.rejected.count + report.unchecked.count + report.sentUnconfirmed.count > 0 {
+            if canCopyAgain, report.notCopied.count + report.rejected.count + report.unchecked.count + report.sentUnconfirmed.count > 0 {
+                Section {
                     Button("Copy Missing Chats Again", action: copyAgain)
                 }
-                Button(String(localized: "Open \(destination)"), action: open).fontWeight(.semibold)
             }
         }
+        .safeAreaInset(edge: .bottom) { actions }
+    }
+
+    private var actions: some View {
+        VStack(spacing: 8) {
+            Button(action: done) { Text("Done").frame(maxWidth: .infinity) }
+                .buttonStyle(.borderedProminent)
+            if let next {
+                Button(action: moveNext) { Text("Move \(next) Next").frame(maxWidth: .infinity) }
+                    .buttonStyle(.bordered)
+                    .tint(.primary)
+            }
+            if let remove {
+                Button(role: .destructive, action: remove) { Text("Remove \(source)…").frame(maxWidth: .infinity) }
+                    .buttonStyle(.bordered)
+                Text("\(source)’s chats stay on its host. Only Hermex’s copy of the server is removed.")
+                    .font(.footnote)
+                    .fontWeight(.regular)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .controlSize(.large)
+        .fontWeight(.semibold)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.bar)
     }
 
     private var staying: Int { report.notCopied.count + report.rejected.count + report.oversized.count + report.keptOnWebui.count }
@@ -748,7 +810,9 @@ private struct MoveToHermesNoticeScreen<Actions: View>: View {
 
 /// The session list's Move to Hermes banner for `serverID` (S1, 2A, A5), shown on the webui
 /// server and, while a move is paused or its report waits, on the destination too. It opens
-/// the guided sheet; A5's More menu offers Copy Missing Chats Again and removal (S2).
+/// the guided sheet; A5's More menu offers Copy Missing Chats Again and removal (S2). Before
+/// any move, a webui server asked the one-time question shows the invite instead (#1267, 2A)
+/// until ✕.
 struct MoveToHermesBanner: View {
     let serverID: String
     @Environment(AuthManager.self) private var auth
@@ -758,32 +822,72 @@ struct MoveToHermesBanner: View {
     private let notices = MoveToHermesNotices.shared
 
     /// The banner a sheet opened from: the row stays while its sheet is up, though a running
-    /// move has no banner of its own, so the sheet isn't torn down with it.
+    /// move has no banner of its own, so the sheet isn't torn down with it. The invite's has no
+    /// notice yet.
     private struct Request: Identifiable {
-        let notice: MoveToHermesNotice
+        let sourceID: String
+        let notice: MoveToHermesNotice?
         let entry: MoveToHermesEntry
-        var sourceID: String { notice.sourceID }
         var id: String { "\(sourceID)\(entry)" }
     }
 
     var body: some View {
-        if let notice = notices.banner(for: serverID, in: auth.servers) ?? request?.notice {
-            banner(notice)
-                .sheet(item: $request) { MoveToHermesSheet(auth: auth, sourceID: $0.sourceID, entry: $0.entry) }
-                .alert(String(localized: "Remove \(sourceName(notice))?"), isPresented: $isConfirmingRemove) {
-                    Button("Cancel", role: .cancel) {}
-                    Button("Remove Server", role: .destructive) { remove(notice) }
-                } message: {
-                    if let source = auth.servers.first(where: { $0.id == notice.sourceID }) {
-                        Text(MoveToHermesRemoval.message(for: source, servers: auth.servers) ?? "")
-                    }
+        let notice = notices.banner(for: serverID, in: auth.servers) ?? request?.notice
+        if notice != nil || request != nil || auth.showsMoveInvite(for: serverID) {
+            // One row for every card, so a sheet survives the invite turning into a notice.
+            VStack(spacing: 0) {
+                if let notice { banner(notice) } else { invite }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .sessionsScreenListRow()
+            .sheet(item: $request) { MoveToHermesSheet(auth: auth, sourceID: $0.sourceID, entry: $0.entry) }
+            .alert(notice.map { String(localized: "Remove \(sourceName($0.sourceID))?") } ?? "", isPresented: $isConfirmingRemove) {
+                Button("Cancel", role: .cancel) {}
+                if let notice { Button("Remove Server", role: .destructive) { remove(notice) } }
+            } message: {
+                if let source = auth.servers.first(where: { $0.id == notice?.sourceID }) {
+                    Text(MoveToHermesRemoval.message(for: source, servers: auth.servers) ?? "")
                 }
+            }
         }
     }
 
-    private func sourceName(_ notice: MoveToHermesNotice) -> String {
-        auth.servers.first { $0.id == notice.sourceID }.map(MoveToHermesModel.name)
-            ?? URL(string: notice.sourceID)?.host ?? notice.sourceID
+    private func sourceName(_ sourceID: String) -> String {
+        auth.servers.first { $0.id == sourceID }.map(MoveToHermesModel.name) ?? URL(string: sourceID)?.host ?? sourceID
+    }
+
+    /// "Move <server> to Hermes" (2A): Move starts the guided move as Settings does; ✕ hides it
+    /// for this server for good.
+    private var invite: some View {
+        let source = sourceName(serverID)
+        return HStack(spacing: 12) {
+            Image(systemName: "arrow.right")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Move \(source) to Hermes").fontWeight(.semibold)
+                Text("Bring your chats to Hermes.").foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            Button("Move") { request = Request(sourceID: serverID, notice: nil, entry: .start) }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
+                .fontWeight(.semibold)
+                .accessibilityLabel(Text("Move \(source) to Hermes"))
+            Button { auth.noteMovePrompt(.dismissed, forSource: serverID) } label: {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(Text("Dismiss"))
+        }
+        .font(.subheadline)
+        .moveToHermesCard(Color(.secondarySystemBackground))
     }
 
     private func banner(_ notice: MoveToHermesNotice) -> some View {
@@ -800,7 +904,7 @@ struct MoveToHermesBanner: View {
                     }
                 case .finished:
                     Text("Move finished.").fontWeight(.semibold)
-                    Text("See what moved to \(destination) and what stayed on \(sourceName(notice)).")
+                    Text("See what moved to \(destination) and what stayed on \(sourceName(notice.sourceID)).")
                 case .moved, .running:
                     Text("Moved to \(destination).").fontWeight(.semibold)
                     Text("Continue your chats there. Sending here too can split a conversation.")
@@ -810,14 +914,14 @@ struct MoveToHermesBanner: View {
             HStack(spacing: 18) {
                 switch notice.stage {
                 case .paused(let canResume):
-                    if canResume { Button("Resume") { request = Request(notice: notice, entry: .resume) } }
-                    Button("Details") { request = Request(notice: notice, entry: .details) }
+                    if canResume { Button("Resume") { request = Request(sourceID: notice.sourceID, notice: notice, entry: .resume) } }
+                    Button("Details") { request = Request(sourceID: notice.sourceID, notice: notice, entry: .details) }
                 case .finished:
-                    Button("See Report") { request = Request(notice: notice, entry: .details) }
+                    Button("See Report") { request = Request(sourceID: notice.sourceID, notice: notice, entry: .details) }
                 case .moved, .running:
                     Button(String(localized: "Open \(destination)")) { auth.switchActiveServer(to: notice.destination) }
                     Menu("More…") {
-                        Button("Copy Missing Chats Again") { request = Request(notice: notice, entry: .copyMissingAgain) }
+                        Button("Copy Missing Chats Again") { request = Request(sourceID: notice.sourceID, notice: notice, entry: .copyMissingAgain) }
                         Button("Remove This Server", role: .destructive) { isConfirmingRemove = true }
                     }
                 }
@@ -826,13 +930,7 @@ struct MoveToHermesBanner: View {
             .buttonStyle(.borderless)
         }
         .font(.subheadline)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .sessionsScreenListRow()
+        .moveToHermesCard(Color.orange.opacity(0.12))
     }
 
     private func remove(_ notice: MoveToHermesNotice) {
@@ -841,16 +939,28 @@ struct MoveToHermesBanner: View {
     }
 }
 
+private extension View {
+    /// The Move banners' shared card.
+    func moveToHermesCard(_ background: Color) -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
 extension View {
-    /// Applied once at the root (`ContentView`): hands `auth` to the Move banners and keeps
-    /// `MoveToHermesNotices` current when the registry changes and on foreground.
+    /// Applied once at the root (`ContentView`): hands `auth` to the Move banners, keeps
+    /// `MoveToHermesNotices` current when the registry changes and on foreground, and shows
+    /// the offer after a Hermes sign-in (`AuthManager.moveOffer`) and the one-time question
+    /// (`AuthManager.moveQuestion`), above any server's screens.
     func moveToHermesNotices(_ auth: AuthManager) -> some View {
         modifier(MoveToHermesNoticesRefresh(auth: auth))
     }
 }
 
 private struct MoveToHermesNoticesRefresh: ViewModifier {
-    let auth: AuthManager
+    @Bindable var auth: AuthManager
     @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
@@ -861,5 +971,221 @@ private struct MoveToHermesNoticesRefresh: ViewModifier {
                 guard scenePhase == .active else { return }
                 Task { await MoveToHermesNotices.shared.refresh(auth) }
             }
+            .sheet(item: $auth.moveOffer) { MoveToHermesOfferSheet(auth: auth, offer: $0) }
+            .sheet(item: $auth.moveQuestion) { MoveToHermesQuestionSheet(auth: auth, question: $0) }
+            .task(id: QuestionTrigger(state: auth.state, servers: auth.servers, offer: auth.moveOffer?.id, phase: scenePhase,
+                                      showsList: MoveToHermesNotices.shared.showsChatList(of: auth.activeServer?.id))) {
+                guard scenePhase == .active else { return }
+                await MoveToHermesQuestionTiming.ask(auth, notices: .shared)
+            }
+    }
+
+    /// What can make the one-time question due: a launch, a sign-in or switch, a server added,
+    /// the offer closing, a return to the foreground, or the active server's chat list coming
+    /// back on screen.
+    private struct QuestionTrigger: Equatable {
+        let state: AuthManager.State
+        let servers: [ServerAccount]
+        let offer: String?
+        let phase: ScenePhase
+        let showsList: Bool
+    }
+}
+
+/// When the root asks the one-time question (#1267): once it is due, the active server's chat
+/// list is on screen (`MoveToHermesNotices.showsChatList`), and no window presents a sheet or
+/// alert. A covering presentation is waited out, not skipped: its dismissal checks again. A
+/// hidden list ends the wait; the root asks again when it returns.
+@MainActor
+enum MoveToHermesQuestionTiming {
+    /// Asks `auth`'s question once it is due over its chat list and nothing covers the app. Waits
+    /// `settle` first and after each covering presentation closes, so a launch's own sheets and
+    /// links, or a sheet closing, finish before it. Returns once asked, no longer due, off its
+    /// list, or cancelled (another trigger, the app leaving the foreground).
+    static func ask(_ auth: AuthManager, notices: MoveToHermesNotices, settle: Duration = .seconds(1),
+                    windows: @MainActor () -> [UIWindow] = { appWindows }) async {
+        func isDue() -> Bool { auth.isMoveQuestionDue && notices.showsChatList(of: auth.activeServer?.id) }
+        while isDue() {
+            try? await Task.sleep(for: settle)
+            guard !Task.isCancelled, isDue() else { return }
+            guard let cover = windows().lazy.compactMap({ $0.rootViewController?.presentedViewController }).first else {
+                return auth.askAboutMoveIfDue()
+            }
+            await dismissal(of: cover)
+        }
+    }
+
+    private static var appWindows: [UIWindow] {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+    }
+
+    /// Returns when `controller`'s view leaves its window (it was dismissed) or the task is
+    /// cancelled. UIKit has no public dismissal callback a non-owner can observe, so a hidden
+    /// probe view in the presentation reports it.
+    private static func dismissal(of controller: UIViewController) async {
+        let probe = DismissalProbe()
+        controller.view.addSubview(probe)
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                probe.onDismissal = { continuation.resume() }
+                if Task.isCancelled || probe.window == nil { probe.dismissed() }
+            }
+        } onCancel: {
+            Task { @MainActor in probe.dismissed() }
+        }
+        probe.removeFromSuperview()
+    }
+
+    private final class DismissalProbe: UIView {
+        /// Called once, the first time the probe leaves a window.
+        var onDismissal: (() -> Void)?
+
+        init() {
+            super.init(frame: .zero)
+            isHidden = true
+            isUserInteractionEnabled = false
+            accessibilityElementsHidden = true
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func didMoveToWindow() {
+            if window == nil { dismissed() }
+        }
+
+        func dismissed() {
+            let onDismissal = onDismissal
+            self.onDismissal = nil
+            onDismissal?()
+        }
+    }
+}
+
+/// "Move <server> to Hermes" (#1267, 1A): asked once for each webui server that hasn't moved.
+/// Move to Hermes turns this sheet into the guided move as Settings starts it: straight to the
+/// scan with a Bots connection, otherwise the host choice and its Hermes sign-in. Not Now and
+/// closing leave the chat list's banner.
+private struct MoveToHermesQuestionSheet: View {
+    let auth: AuthManager
+    let question: MoveToHermesQuestion
+    @Environment(\.dismiss) private var dismiss
+    @State private var isMoving = false
+
+    var body: some View {
+        Group {
+            if isMoving {
+                MoveToHermesSheet(auth: auth, sourceID: question.sourceID, entry: .start)
+            } else {
+                ask
+            }
+        }
+        .presentationDetents(isMoving ? [.large] : [.medium, .large])
+    }
+
+    private var ask: some View {
+        let source = auth.servers.first { $0.id == question.sourceID }.map(MoveToHermesModel.name)
+            ?? URL(string: question.sourceID)?.host ?? question.sourceID
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: "arrow.right")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 48, height: 48)
+                    .background(LinearGradient(colors: [.indigo, .blue], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .accessibilityHidden(true)
+                Text("Move \(source) to Hermes")
+                    .font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                Text("Hermex now talks to Hermes directly. Your chats, titles, pins and drafts come with you.")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    point(String(localized: "Nothing is deleted. \(source) keeps working until you remove it."))
+                    point(question.hasBotsSignIn
+                        ? String(localized: "Uses the Hermes sign-in you set up for Bots.")
+                        : String(localized: "You’ll sign in to your Hermes host first."))
+                }
+                VStack(spacing: 4) {
+                    Button { isMoving = true } label: {
+                        Text("Move to Hermes").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button { dismiss() } label: {
+                        Text("Not Now").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .controlSize(.large)
+                .fontWeight(.semibold)
+                .padding(.top, 8)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func point(_ text: String) -> some View {
+        Label {
+            Text(text).font(.subheadline)
+        } icon: {
+            Image(systemName: "checkmark").font(.subheadline.weight(.bold)).foregroundStyle(.green)
+        }
+    }
+}
+
+/// "Signed in to <host>" (#1266, 3A): offers to bring a webui server's chats to the Hermes
+/// server just signed in to. Bring My Chats turns this sheet into the guided move, scanning that
+/// server; Not Now and closing leave everything as it is.
+private struct MoveToHermesOfferSheet: View {
+    let auth: AuthManager
+    let offer: MoveToHermesOffer
+    @Environment(\.dismiss) private var dismiss
+    @State private var isBringing = false
+
+    var body: some View {
+        Group {
+            if isBringing {
+                MoveToHermesSheet(auth: auth, sourceID: offer.sourceID, entry: .offer(destinationID: offer.destinationID))
+            } else {
+                question
+            }
+        }
+        .presentationDetents(isBringing ? [.large] : [.medium, .large])
+    }
+
+    private func name(_ id: String) -> String {
+        auth.servers.first { $0.id == id }.map(MoveToHermesModel.name) ?? URL(string: id)?.host ?? id
+    }
+
+    private var question: some View {
+        let source = name(offer.sourceID)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Signed in to \(URL(string: offer.destinationID)?.host ?? offer.destinationID)")
+                    .font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                Text("Bring your chats from \(source)? Hermex checks which ones Hermes already has, then shows you what it will copy before it starts.")
+                    .foregroundStyle(.secondary)
+                VStack(spacing: 10) {
+                    Button { isBringing = true } label: {
+                        Text("Bring My Chats").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button { dismiss() } label: {
+                        Text("Not Now").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .controlSize(.large)
+                .padding(.top, 8)
+                Text("You can do this later in Settings › \(source).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
