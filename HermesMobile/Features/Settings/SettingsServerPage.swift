@@ -126,7 +126,7 @@ struct SettingsServerPage: View {
     }
 
     /// The active Hermes server's sign-in, with its headers, the release saved at that sign-in,
-    /// and the host's update standing (#1075).
+    /// and the host's update standing (#1075), then its archived sessions and API keys (#1318).
     @ViewBuilder
     private func hermesSections(server: URL) -> some View {
         Section {
@@ -151,6 +151,10 @@ struct SettingsServerPage: View {
             HermesUpdateCallout(model: HermesUpdateModel.for(server: server), version: account.serverVersion)
         } header: {
             Text("Server")
+        } footer: {
+            if hermesConnection?.hasNoCredentials == true {
+                OpenDashboardWarning()
+            }
         }
 
         if let hermesConnection {
@@ -159,6 +163,14 @@ struct SettingsServerPage: View {
                     ArchivedSessionsView(server: server, hermes: .saved(hermesConnection, server: server, profile: nil))
                 } label: {
                     SettingsLabel(title: String(localized: "Archived Sessions"), systemImage: "archivebox")
+                }
+            }
+
+            Section {
+                NavigationLink {
+                    APIKeysView(connection: hermesConnection, server: server)
+                } label: {
+                    SettingsLabel(title: String(localized: "API Keys"), systemImage: "key")
                 }
             }
         }
@@ -285,9 +297,13 @@ struct SettingsServerPage: View {
     }
 
     private var removeFootnote: String {
+        #if targetEnvironment(macCatalyst)
+        usualRemovalMessage
+        #else
         signsOut
             ? String(localized: "Signs out and removes this server from this iPhone.")
             : String(localized: "Removes this server from this iPhone.")
+        #endif
     }
 
     private var removeAlertMessage: String {

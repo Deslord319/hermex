@@ -124,6 +124,9 @@ struct SettingsView: View {
         .macReadableForm(maxWidth: AdaptiveReadableContentWidth.secondaryDestination)
         .listStyle(.insetGrouped)
         .navigationTitle("Settings")
+        #if targetEnvironment(macCatalyst)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .onAppear {
             isPushOn = PushRegistrar.shared?.pairing(for: server) != nil
         }

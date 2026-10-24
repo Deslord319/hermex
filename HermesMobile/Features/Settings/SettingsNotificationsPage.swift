@@ -6,6 +6,7 @@ import UserNotifications
 struct SettingsNotificationsPage: View {
     let server: URL
 
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
     @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey) private var showsLiveActivityResponseExcerpts = false
     @State private var notificationPermissionStatus: UNAuthorizationStatus?
@@ -36,15 +37,40 @@ struct SettingsNotificationsPage: View {
                 Text("On this iPhone · All servers")
                 #endif
             } footer: {
-                if let notificationStatusText {
-                    Text(notificationStatusText)
+                VStack(alignment: .leading, spacing: 4) {
+                    if let notificationStatusText {
+                        Text(notificationStatusText)
+                    }
+                    // A denied permission must be restored in the platform's system settings.
+                    #if targetEnvironment(macCatalyst)
+                    if notificationPermissionStatus == .denied, let settingsURL = macNotificationSettingsURL {
+                        Link("Open Settings", destination: settingsURL)
+                    }
+                    #else
+                    if notificationPermissionStatus == .denied,
+                       let settingsURL = URL(string: UIApplication.openNotificationSettingsURLString) {
+                        Link("Open Settings", destination: settingsURL)
+                    }
+                    #endif
                 }
             }
         }
-        .task {
-            await refreshNotificationPermissionStatus()
+        // Re-read on return from iPhone Settings so the footer and link drop a stale denial.
+        .task(id: scenePhase) {
+            if scenePhase == .active { await refreshNotificationPermissionStatus() }
         }
     }
+
+    #if targetEnvironment(macCatalyst)
+    /// Opens this build's notification pane; app-settings:notifications is an iOS route.
+    private var macNotificationSettingsURL: URL? {
+        var components = URLComponents(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+        if let identifier = Bundle.main.bundleIdentifier {
+            components?.queryItems = [URLQueryItem(name: "id", value: identifier)]
+        }
+        return components?.url
+    }
+    #endif
 
     private var notificationStatusText: String? {
         #if targetEnvironment(macCatalyst)

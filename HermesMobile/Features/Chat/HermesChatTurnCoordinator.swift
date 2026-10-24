@@ -51,7 +51,7 @@ struct HermesSessionChat: Hashable, Identifiable {
     let id = UUID()
     let server: URL
     let connection: BotConnection
-    let target: ConversationTarget
+    var target: ConversationTarget
     /// The session the row this chat opened from names as its parent (`parent_session_id`): the
     /// chat asks the host whether it is a branch of it, for its "Forked from" row (#1051). Nil
     /// asks nothing.
@@ -1121,7 +1121,15 @@ struct HermesChatTranscript: Equatable {
     }
 
     private func complete(_ payload: BotJSON) {
-        guard activeStreamID != nil else { return }
+        guard activeStreamID != nil else {
+            // A turn this chat never saw start, such as another client's the host failed
+            // before it began (#1158): it counts as a turn, so reads begun before it drop, and
+            // the last outcome goes. A failure is read again for that turn's own Retry.
+            turnsStarted += 1
+            activity.unseenTurnDidComplete()
+            if payload["status"].text == "error" { readFailedTurn() }
+            return
+        }
         let ending: TranscriptTurnRunOutcome.Ending
         switch payload["status"].text {
         case "interrupted": ending = .cancelled

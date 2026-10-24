@@ -14,7 +14,6 @@ struct MoveToHermesSheet: View {
     @State private var isSigningIn = false
     @State private var isConfirmingFinish = false
     @State private var isConfirmingRemove = false
-    @State private var copiedPrompt = false
     private let auth: AuthManager
     private let entry: MoveToHermesEntry
 
@@ -31,6 +30,9 @@ struct MoveToHermesSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbar }
         }
+        #if targetEnvironment(macCatalyst)
+        .adaptiveFormPresentation(preferredMacSize: CGSize(width: 700, height: 640))
+        #endif
         .task { model.open(entry) }
         .onDisappear { model.close() }
         .sheet(isPresented: $isSigningIn) {
@@ -195,17 +197,6 @@ struct MoveToHermesSheet: View {
     @ViewBuilder
     private func refused(_ refusal: MoveToHermesModel.Refusal) -> some View {
         switch refusal {
-        case .noSignIn:
-            MoveToHermesNoticeScreen(
-                tint: .orange, title: String(localized: "This Hermes host has no sign-in"),
-                message: String(localized: "Hermex needs a password to reach Hermes from your phone. On the host, turn on basic auth with a persistent secret, then try again. \(source) keeps working as it is.")) {
-                Button(copiedPrompt ? String(localized: "Copied") : String(localized: "How to Turn On Sign-In")) {
-                    UIPasteboard.general.string = BotConnectionSetup.prompt
-                    copiedPrompt = true
-                }
-                .buttonStyle(.bordered)
-                Button("Try Again") { model.scan() }.buttonStyle(.borderedProminent)
-            }
         case .outdated(let version):
             MoveToHermesNoticeScreen(
                 tint: .orange, title: String(localized: "Update Hermes first"),
@@ -236,9 +227,19 @@ struct MoveToHermesSheet: View {
             let counts = model.counts
             List {
                 Section {
-                    Text(review.version.map { String(localized: "Signed in to \(destination) as \(review.connection.username). Hermes \($0).") }
-                         ?? String(localized: "Signed in to \(destination) as \(review.connection.username)."))
-                        .foregroundStyle(.secondary)
+                    Group {
+                        if review.connection.hasNoCredentials {
+                            Text(review.version.map { String(localized: "Signed in to \(destination). Hermes \($0).") }
+                                 ?? String(localized: "Signed in to \(destination)."))
+                        } else {
+                            Text(review.version.map { String(localized: "Signed in to \(destination) as \(review.connection.username). Hermes \($0).") }
+                                 ?? String(localized: "Signed in to \(destination) as \(review.connection.username)."))
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                    if review.connection.hasNoCredentials {
+                        OpenDashboardWarning()
+                    }
                     if let only = review.scan.onlyProfile {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Only “\(only)” was checked.").fontWeight(.semibold)
@@ -994,7 +995,7 @@ private struct MoveToHermesNoticesRefresh: ViewModifier {
 
 /// When the root asks the one-time question (#1267): once it is due, the active server's chat
 /// list is on screen (`MoveToHermesNotices.showsChatList`), and no window presents a sheet or
-/// alert. A covering presentation is waited out, not skipped: its dismissal checks again. A
+/// alert. The topmost covering presentation is waited out, not skipped: its dismissal checks again. A
 /// hidden list ends the wait; the root asks again when it returns.
 @MainActor
 enum MoveToHermesQuestionTiming {
@@ -1008,9 +1009,11 @@ enum MoveToHermesQuestionTiming {
         while isDue() {
             try? await Task.sleep(for: settle)
             guard !Task.isCancelled, isDue() else { return }
-            guard let cover = windows().lazy.compactMap({ $0.rootViewController?.presentedViewController }).first else {
+            guard var cover = windows().lazy.compactMap({ $0.rootViewController?.presentedViewController }).first else {
                 return auth.askAboutMoveIfDue()
             }
+            // The topmost layer: a full-screen cover takes the ones beneath it out of the window.
+            while let above = cover.presentedViewController { cover = above }
             await dismissal(of: cover)
         }
     }
@@ -1080,6 +1083,9 @@ private struct MoveToHermesQuestionSheet: View {
             }
         }
         .presentationDetents(isMoving ? [.large] : [.medium, .large])
+        #if targetEnvironment(macCatalyst)
+        .adaptiveFormPresentation(preferredMacSize: isMoving ? CGSize(width: 700, height: 640) : CGSize(width: 520, height: 340))
+        #endif
     }
 
     private var ask: some View {
@@ -1151,6 +1157,9 @@ private struct MoveToHermesOfferSheet: View {
             }
         }
         .presentationDetents(isBringing ? [.large] : [.medium, .large])
+        #if targetEnvironment(macCatalyst)
+        .adaptiveFormPresentation(preferredMacSize: isBringing ? CGSize(width: 700, height: 640) : CGSize(width: 520, height: 280))
+        #endif
     }
 
     private func name(_ id: String) -> String {

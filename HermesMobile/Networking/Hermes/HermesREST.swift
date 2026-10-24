@@ -87,6 +87,14 @@ import Foundation
 /// (`web_server_sessions.py` `_mutate_session_request`): a PATCH or an import without
 /// `request_id` and `expected_revision` is 409 `client_upgrade_required: …`, with one of them
 /// 409 `mutation_identity_required`, and the 0.21.5 pin has no `mutation-snapshot` route.
+/// The `.env` routes the API Keys screen uses (#1318) are read at the same pin
+/// (`web_routers/config_env.py`) and checked against a live 0.21.5 host on 2026-10-22: the list is
+/// an object keyed by variable name, each row with `is_set`, `redacted_value` (`«redacted:…»` or
+/// null), `category`, `provider_label`, `advanced` and `channel_managed`; a write answers `{ok, key,
+/// config_updates}` and a removal `{ok, key, removed, found, …}`. A redacted preview sent as the
+/// value or an invalid name is 400 `{detail}`, a key the `.env` lacks is 404 `{detail}`, and so is
+/// an unknown Profile. The body's `profile` wins over the query's; without either the host writes
+/// the dashboard's own Profile.
 enum HermesREST: Equatable, Sendable {
     /// What the agent of a Hermex session is told about the screen it writes to (#1278): the
     /// host appends it to the system prompt of every agent running as `HermesCall.source`.
@@ -109,6 +117,10 @@ enum HermesREST: Equatable, Sendable {
 
     /// Public, so it reads the host before any credential is sent.
     case status
+    /// The dashboard's own page, whose script carries the session token an open dashboard
+    /// (`HermesSignInMethod.open`, #1314) checks on every `/api/*` route (`pageToken(in:)`).
+    /// Public.
+    case dashboardPage
     case login(username: String, password: String)
     /// Trades a browser sign-in's refresh token for a new access token and a rotated refresh
     /// token (#708): `{access_token, refresh_token, token_type, expires_at, provider, user_id}`,
@@ -136,8 +148,13 @@ enum HermesREST: Equatable, Sendable {
     /// resolves a relative path against that stored session's folder; without one, `path` must
     /// be absolute, which works before the host has stored the session.
     case downloadArtifact(path: String, profile: String, sessionID: String?)
-    /// Writes one managed environment value at the host root.
-    case setEnvironment(key: String, value: String)
+    /// `profile`'s `.env` keys beside every key the host knows (#1318). Never cached.
+    case environment(profile: String)
+    /// Writes one `.env` value, under `profile`, or the dashboard's own Profile when nil. The value
+    /// goes only in the body.
+    case setEnvironment(key: String, value: String, profile: String?)
+    /// Removes one key from `profile`'s `.env`; the body names both.
+    case removeEnvironment(key: String, profile: String)
     /// Installs an agent plugin, reinstalling over an existing copy.
     case installPlugin(identifier: String)
     case setPlugin(name: String, enabled: Bool)
@@ -162,7 +179,7 @@ enum HermesREST: Equatable, Sendable {
     /// Each page also brings every pinned row it missed, archived ones included. `archived`
     /// reads the Archived screen's page instead (#1048): only archived rows, hidden Bot Chats
     /// included, plus the same pinned back-fill.
-    case sessionList(profile: String, offset: Int, archived: Bool = false)
+    case sessionList(profile: String, offset: Int, archived: Bool = false, scheduled: Bool = false)
     /// One page of every session `profile` lists for Move to Hermes's scan (#1213): archived,
     /// empty and machine-run rows included, newest-created first. A session made or deleted
     /// mid-scan shifts later pages, so a row can repeat or slip past; the scan reads any id it
@@ -187,7 +204,7 @@ enum HermesREST: Equatable, Sendable {
     /// `profile`'s sessions matching `query` (#1053): id matches, then message-content matches,
     /// at most `limit` (the host clamps it to 1…`sessionSearchMaximum`), archived and hidden ones
     /// included, without machine-run rows.
-    case sessionSearch(query: String, profile: String, limit: Int = sessionSearchLimit)
+    case sessionSearch(query: String, profile: String, limit: Int = sessionSearchLimit, scheduled: Bool = false)
     /// Every Profile's scheduled Tasks, paused and completed included: a bare array.
     case cronJobs
     /// Creates a Task in `profile`, or in the host's default Profile when nil.
@@ -341,6 +358,7 @@ enum HermesREST: Equatable, Sendable {
     func request(base: URL) throws -> URLRequest {
         switch self {
         case .status: return Self.get(base.appendingPathComponent("api/status"))
+        case .dashboardPage: return Self.get(base.appendingPathComponent(""))
         case .health: return Self.get(base.appendingPathComponent("api/health"))
         case .updateCheck(let force):
             guard var parts = URLComponents(url: base.appendingPathComponent("api/hermes/update/check"),
@@ -398,8 +416,13 @@ enum HermesREST: Equatable, Sendable {
             var request = URLRequest(url: url)
             request.cachePolicy = .reloadIgnoringLocalCacheData
             return request
-        case .setEnvironment(let key, let value):
-            return try Self.send("PUT", base.appendingPathComponent("api/env"), ["key": .string(key), "value": .string(value)])
+        case .environment(let profile): return Self.get(try Self.url(base, "api/env", profile: profile))
+        case .setEnvironment(let key, let value, let profile):
+            var body: [String: BotJSON] = ["key": .string(key), "value": .string(value)]
+            if let profile, !profile.isEmpty { body["profile"] = .string(profile) }
+            return try Self.send("PUT", base.appendingPathComponent("api/env"), body)
+        case .removeEnvironment(let key, let profile):
+            return try Self.send("DELETE", base.appendingPathComponent("api/env"), ["key": .string(key), "profile": .string(profile)])
         case .installPlugin(let identifier):
             return try Self.send("POST", base.appendingPathComponent("api/dashboard/agent-plugins/install"), [
                 "identifier": .string(identifier), "enable": .bool(true), "force": .bool(true)
@@ -437,7 +460,7 @@ enum HermesREST: Equatable, Sendable {
             }
             guard let url = parts.url else { throw BotFailure.invalidAddress }
             return Self.get(url)
-        case .sessionList(let profile, let offset, let archived):
+        case .sessionList(let profile, let offset, let archived, let scheduled):
             guard !profile.isEmpty, offset >= 0,
                   var parts = URLComponents(url: base.appendingPathComponent("api/sessions"), resolvingAgainstBaseURL: false)
             else { throw BotFailure.invalidAddress }
@@ -447,9 +470,10 @@ enum HermesREST: Equatable, Sendable {
                 URLQueryItem(name: "profile", value: profile), URLQueryItem(name: "order", value: "recent"),
                 URLQueryItem(name: "archived", value: archived ? "only" : "exclude"),
                 URLQueryItem(name: "limit", value: String(Self.sessionPageSize)), URLQueryItem(name: "offset", value: String(offset))
-            ] + (archived ? [] : [URLQueryItem(name: "min_messages", value: "1")]) + [
-                URLQueryItem(name: "exclude_sources", value: "cron,kanban,oneshot,subagent,tool")
-            ]
+            ] + (archived ? [] : [URLQueryItem(name: "min_messages", value: "1")]) + (scheduled ? [
+                URLQueryItem(name: "sources", value: "cron"),
+                URLQueryItem(name: "exclude_sources", value: "kanban,oneshot,subagent,tool")
+            ] : [URLQueryItem(name: "exclude_sources", value: archived ? "kanban,oneshot,subagent,tool" : "cron,kanban,oneshot,subagent,tool")])
             guard let url = parts.url else { throw BotFailure.invalidAddress }
             return Self.get(url)
         case .sessionScan(let profile, let offset):
@@ -482,16 +506,17 @@ enum HermesREST: Equatable, Sendable {
             request.httpBody = Data("{".utf8) + identity.leadingMembers + body.dropFirst()
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             return request
-        case .sessionSearch(let query, let profile, let limit):
+        case .sessionSearch(let query, let profile, let limit, let scheduled):
             guard !query.isEmpty, !profile.isEmpty,
                   var parts = URLComponents(url: base.appendingPathComponent("api/sessions/search"), resolvingAgainstBaseURL: false)
             else { throw BotFailure.invalidAddress }
             // The same sources the list leaves out, so a search never finds a row it never shows.
             parts.queryItems = [
                 URLQueryItem(name: "q", value: query), URLQueryItem(name: "profile", value: profile),
-                URLQueryItem(name: "limit", value: String(limit)),
-                URLQueryItem(name: "exclude_sources", value: "cron,kanban,oneshot,subagent,tool")
-            ]
+                URLQueryItem(name: "limit", value: String(limit))
+            ] + (scheduled ? [URLQueryItem(name: "sources", value: "cron"),
+                              URLQueryItem(name: "exclude_sources", value: "kanban,oneshot,subagent,tool")]
+                 : [URLQueryItem(name: "exclude_sources", value: "cron,kanban,oneshot,subagent,tool")])
             // The host reads a bare `+` as a space, so a typed one ("c++") is escaped.
             parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
             guard let url = parts.url else { throw BotFailure.invalidAddress }
@@ -689,32 +714,57 @@ enum HermesREST: Equatable, Sendable {
         return try send(method, url, body)
     }
 
-    /// The gateway socket's upgrade: the `ws`/`wss` URL matching the address's scheme,
-    /// offering `hermes-gateway-v1` and the single-use ticket as subprotocols. A request's
-    /// `Sec-WebSocket-Protocol` header is where `URLSessionWebSocketTask` takes them from.
-    static func gatewayUpgrade(base: URL, ticket: String) throws -> URLRequest {
+    /// What a socket upgrade presents to the host's check, which runs before the socket opens.
+    enum UpgradePass: Equatable, Sendable {
+        /// A single-use ticket minted at `ticket`, for a host with sign-in.
+        case ticket(String)
+        /// An open dashboard's session token (#1314), presented as `?token=`. The host reads
+        /// tickets only behind its sign-in, and accepts this one without a subprotocol.
+        case pageToken(String)
+    }
+
+    /// The gateway socket's upgrade: the `ws`/`wss` URL matching the address's scheme. A ticket
+    /// goes with `hermes-gateway-v1` as subprotocols, which `URLSessionWebSocketTask` takes from
+    /// the request's `Sec-WebSocket-Protocol` header; a page token goes as `?token=`, with none.
+    static func gatewayUpgrade(base: URL, pass: UpgradePass) throws -> URLRequest {
         guard var parts = URLComponents(url: base.appendingPathComponent("api/ws"), resolvingAgainstBaseURL: false)
         else { throw BotFailure.unsupported }
         parts.scheme = base.scheme == "https" ? "wss" : "ws"
+        if case .pageToken(let token) = pass { parts.queryItems = [URLQueryItem(name: "token", value: token)] }
         guard let url = parts.url else { throw BotFailure.invalidAddress }
         var request = URLRequest(url: url)
-        request.setValue("hermes-gateway-v1, hermes-gateway-ticket." + ticket, forHTTPHeaderField: "Sec-WebSocket-Protocol")
+        if case .ticket(let ticket) = pass {
+            request.setValue("hermes-gateway-v1, hermes-gateway-ticket." + ticket, forHTTPHeaderField: "Sec-WebSocket-Protocol")
+        }
         return request
     }
 
     /// A Board's Kanban event socket (#1045): `/api/plugins/kanban/events` on the `ws`/`wss`
-    /// URL matching the address's scheme, presenting the single-use ticket as `?ticket=`. It
-    /// offers no subprotocol, because the host accepts without echoing one. The host pins the
-    /// socket to `board` and sends only events after `since`.
-    static func kanbanEventsUpgrade(base: URL, board: String, since: Int, ticket: String) throws -> URLRequest {
+    /// URL matching the address's scheme, presenting a ticket as `?ticket=` or a page token as
+    /// `?token=`. It offers no subprotocol, because the host accepts without echoing one. The
+    /// host pins the socket to `board` and sends only events after `since`.
+    static func kanbanEventsUpgrade(base: URL, board: String, since: Int, pass: UpgradePass) throws -> URLRequest {
         guard var parts = URLComponents(url: base.appendingPathComponent("api/plugins/kanban/events"),
                                         resolvingAgainstBaseURL: false)
         else { throw BotFailure.invalidAddress }
         parts.scheme = base.scheme == "https" ? "wss" : "ws"
+        let credential = switch pass {
+        case .ticket(let ticket): URLQueryItem(name: "ticket", value: ticket)
+        case .pageToken(let token): URLQueryItem(name: "token", value: token)
+        }
         parts.queryItems = [URLQueryItem(name: "board", value: board), URLQueryItem(name: "since", value: String(max(0, since))),
-                            URLQueryItem(name: "ticket", value: ticket)]
+                            credential]
         guard let url = parts.url else { throw BotFailure.invalidAddress }
         return URLRequest(url: url)
+    }
+
+    /// The session token in `dashboardPage`'s body: upstream writes
+    /// `window.__HERMES_SESSION_TOKEN__="<token>";`, quoted by hand or by `json.dumps`. Nil for
+    /// a page without one, such as a dashboard behind its sign-in, which never injects it.
+    static func pageToken(in page: Data) -> String? {
+        guard let html = String(data: page, encoding: .utf8),
+              let match = html.firstMatch(of: /__HERMES_SESSION_TOKEN__\s*=\s*"([^"\\]+)"/) else { return nil }
+        return String(match.1)
     }
 
     private static func get(_ url: URL) -> URLRequest { bare("GET", url) }

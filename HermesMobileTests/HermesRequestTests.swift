@@ -262,8 +262,14 @@ final class HermesRequestTests: XCTestCase {
              .object(["filename": .string("a.png"), "data_url": .string("data:image/png;base64,YQ==")]), json),
             (.downloadArtifact(path: "/r/a b.pdf", profile: "triage", sessionID: "tip"), "GET",
              "https://hermes.example:9120/api/fs/download?path=/r/a%20b.pdf&profile=triage&session_id=tip", nil, [:]),
-            (.setEnvironment(key: "HERMEX_PUSH_RELAY_URL", value: "https://relay.example"), "PUT", "https://hermes.example:9120/api/env",
+            (.setEnvironment(key: "HERMEX_PUSH_RELAY_URL", value: "https://relay.example", profile: nil), "PUT",
+             "https://hermes.example:9120/api/env",
              .object(["key": .string("HERMEX_PUSH_RELAY_URL"), "value": .string("https://relay.example")]), json),
+            (.environment(profile: "triage"), "GET", "https://hermes.example:9120/api/env?profile=triage", nil, [:]),
+            (.setEnvironment(key: "OPENAI_API_KEY", value: "sk-new", profile: "triage"), "PUT", "https://hermes.example:9120/api/env",
+             .object(["key": .string("OPENAI_API_KEY"), "value": .string("sk-new"), "profile": .string("triage")]), json),
+            (.removeEnvironment(key: "OPENAI_API_KEY", profile: "triage"), "DELETE", "https://hermes.example:9120/api/env",
+             .object(["key": .string("OPENAI_API_KEY"), "profile": .string("triage")]), json),
             (.installPlugin(identifier: "https://github.com/o/r.git/plugin"), "POST",
              "https://hermes.example:9120/api/dashboard/agent-plugins/install",
              .object(["identifier": .string("https://github.com/o/r.git/plugin"), "enable": .bool(true), "force": .bool(true)]), json),
@@ -279,7 +285,7 @@ final class HermesRequestTests: XCTestCase {
             (.sessionMessages(key: "bg_0a5110", profile: "triage"), "GET",
              "https://hermes.example:9120/api/sessions/bg_0a5110/messages?profile=triage", nil, [:]),
             (.sessionList(profile: "triage", offset: 100, archived: true), "GET",
-             "https://hermes.example:9120/api/sessions?profile=triage&order=recent&archived=only&limit=100&offset=100&exclude_sources=cron,kanban,oneshot,subagent,tool",
+             "https://hermes.example:9120/api/sessions?profile=triage&order=recent&archived=only&limit=100&offset=100&exclude_sources=kanban,oneshot,subagent,tool",
              nil, [:]),
             (.updateSession(key: "tip", profile: "triage", change: .title("Plan"), identity: nil), "PATCH",
              "https://hermes.example:9120/api/sessions/tip", .object(["title": .string("Plan"), "profile": .string("triage")]), json),
@@ -416,10 +422,10 @@ final class HermesRequestTests: XCTestCase {
         XCTAssertThrowsError(try HermesREST.profileSoul(name: "../config").request(base: base))
         XCTAssertThrowsError(try HermesREST.setProfileSoul(name: "", content: "x").request(base: base))
         XCTAssertThrowsError(try HermesREST.config(profile: "").request(base: base))
-        let upgrade = try HermesREST.gatewayUpgrade(base: base, ticket: "t1")
+        let upgrade = try HermesREST.gatewayUpgrade(base: base, pass: .ticket("t1"))
         XCTAssertEqual(upgrade.url?.absoluteString, "wss://hermes.example:9120/api/ws")
         XCTAssertEqual(upgrade.allHTTPHeaderFields ?? [:], ["Sec-WebSocket-Protocol": "hermes-gateway-v1, hermes-gateway-ticket.t1"])
-        XCTAssertEqual(try HermesREST.gatewayUpgrade(base: URL(string: "http://192.168.1.2:9120")!, ticket: "t1").url?.absoluteString,
+        XCTAssertEqual(try HermesREST.gatewayUpgrade(base: URL(string: "http://192.168.1.2:9120")!, pass: .ticket("t1")).url?.absoluteString,
                        "ws://192.168.1.2:9120/api/ws")
     }
 }

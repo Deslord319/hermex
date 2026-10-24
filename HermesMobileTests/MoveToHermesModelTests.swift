@@ -99,11 +99,11 @@ final class MoveToHermesModelTests: XCTestCase {
         XCTAssertEqual(model.counts, .init(present: 0, toCopy: 1, overLimit: 0, unchecked: 1, drafts: 0))
     }
 
-    /// R1 and R3 are the host's own sign-in refusals; any other failure shows its advice inline.
-    /// A browser sign-in is never refused (#1266): its failure is advice like any other.
+    /// R3 is the host's own sign-in refusal; any other failure shows its advice inline. Neither a
+    /// browser sign-in (#1266) nor a dashboard without one (#1314) is refused.
     func testRefusalsComeFromTheHostSignInCheck() async throws {
         let cases: [(BotFailure, MoveToHermesModel.Screen?)] = [
-            (.unsupported, .refused(.noSignIn)), (.browserSignIn, nil),
+            (.unsupported, nil), (.browserSignIn, nil),
             (.outdated("0.20.9"), .refused(.outdated("0.20.9"))), (.rejected(401), nil)
         ]
         for (failure, expected) in cases {
@@ -397,6 +397,57 @@ final class MoveToHermesModelTests: XCTestCase {
         notices.noteChatList(of: webui.absoluteString, onScreen: true)
         await MoveToHermesQuestionTiming.ask(auth, notices: notices, settle: .zero) { [] }
         XCTAssertEqual(auth.moveQuestion?.sourceID, webui.absoluteString)
+    }
+
+    /// A covering presentation parks the question until it closes, one layer at a time, even a
+    /// full-screen cover over a sheet, which takes the sheet out of the window (#1274).
+    func testTheQuestionWaitsOutAFullScreenCoverOverASheet() async throws {
+        let notices = MoveToHermesNotices()
+        notices.noteChatList(of: webui.absoluteString, onScreen: true)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        let root = UIViewController()
+        window.rootViewController = root
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let sheet = UIViewController()
+        let cover = UIViewController()
+        cover.modalPresentationStyle = .fullScreen
+        await present(sheet, over: root)
+        await present(cover, over: sheet)
+        XCTAssertNil(sheet.view.window, "The sheet is off-window beneath the cover")
+
+        var looks: [String] = []
+        let looked = (1...2).map { expectation(description: "look \($0)") }
+        let asking = Task {
+            await MoveToHermesQuestionTiming.ask(auth, notices: notices, settle: .zero) {
+                looks.append(cover.presentingViewController != nil ? "cover" : sheet.presentingViewController != nil ? "sheet" : "none")
+                if looks.count <= looked.count { looked[looks.count - 1].fulfill() }
+                return [window]
+            }
+        }
+        await fulfillment(of: [looked[0]])
+        await Task.yield()
+        XCTAssertNil(auth.moveQuestion, "Not over the cover")
+        await dismiss(cover)
+        await fulfillment(of: [looked[1]])
+        XCTAssertNil(auth.moveQuestion, "Not over the sheet")
+        await dismiss(sheet)
+        await asking.value
+        XCTAssertEqual(looks, ["cover", "sheet", "none"], "One look per layer, each waiting for its dismissal")
+        XCTAssertEqual(auth.moveQuestion?.sourceID, webui.absoluteString)
+    }
+
+    private func present(_ controller: UIViewController, over presenter: UIViewController) async {
+        await withCheckedContinuation { continuation in
+            presenter.present(controller, animated: false) { continuation.resume() }
+        }
+    }
+
+    private func dismiss(_ controller: UIViewController) async {
+        await withCheckedContinuation { continuation in
+            controller.dismiss(animated: false) { continuation.resume() }
+        }
     }
 
     /// ✕ hides one server's banner for good: across a server switch, an identity edit from an
