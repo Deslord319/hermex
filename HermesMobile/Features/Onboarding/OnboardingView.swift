@@ -60,7 +60,12 @@ struct OnboardingView: View {
             Color.black.ignoresSafeArea()
 
             #if targetEnvironment(macCatalyst)
-            desktopContent
+            NavigationStack {
+                desktopContent
+                    .background(Color.black)
+                    .navigationTitle(Text(verbatim: "Hermex"))
+                    .toolbar(.hidden, for: .navigationBar)
+            }
             #else
             VStack(spacing: 0) {
                 TabView(selection: $currentPage) {
