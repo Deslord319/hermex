@@ -261,9 +261,9 @@ struct SessionsHeader: View {
     let openSearch: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: isExpanded ? 0 : 16) {
+        HStack(alignment: .center, spacing: isExpanded ? 0 : headerSpacing) {
             HermesHeaderLogo(selectedColor: logoColor)
-                .frame(width: isExpanded ? 0 : 160, alignment: .leading)
+                .frame(width: isExpanded ? 0 : logoWidth, alignment: .leading)
                 .opacity(isExpanded ? 0 : 1)
                 .clipped()
                 .accessibilityHidden(isExpanded)
@@ -271,13 +271,45 @@ struct SessionsHeader: View {
             pill
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 28)
+        .padding(.horizontal, headerHorizontalPadding)
+        .padding(.top, headerTopPadding)
         .animation(SessionListMotion.searchChromeAnimation(reduceMotion: reduceMotion), value: isExpanded)
         .animation(SessionListMotion.searchFocusAnimation(reduceMotion: reduceMotion), value: showsClearButton)
     }
 
     private var isExpanded: Bool { field?.isExpanded == true }
+
+    private var logoWidth: CGFloat {
+        #if targetEnvironment(macCatalyst)
+        104
+        #else
+        160
+        #endif
+    }
+
+    private var headerSpacing: CGFloat {
+        #if targetEnvironment(macCatalyst)
+        8
+        #else
+        16
+        #endif
+    }
+
+    private var headerHorizontalPadding: CGFloat {
+        #if targetEnvironment(macCatalyst)
+        16
+        #else
+        24
+        #endif
+    }
+
+    private var headerTopPadding: CGFloat {
+        #if targetEnvironment(macCatalyst)
+        0
+        #else
+        28
+        #endif
+    }
 
     private var showsClearButton: Bool {
         guard let field else { return false }
@@ -1434,7 +1466,12 @@ extension View {
     }
 
     func sessionsTopChromeListRow() -> some View {
-        listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 18, trailing: 0))
+        #if targetEnvironment(macCatalyst)
+        let bottomInset: CGFloat = 8
+        #else
+        let bottomInset: CGFloat = 18
+        #endif
+        return listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: bottomInset, trailing: 0))
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .zIndex(1)

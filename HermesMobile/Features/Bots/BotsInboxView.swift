@@ -223,6 +223,10 @@ import SwiftUI
             }
         }
         .listStyle(.plain)
+        #if targetEnvironment(macCatalyst)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemBackground))
+        #endif
         .overlay {
             if inbox.connection == nil {
                 GeometryReader { geometry in
@@ -249,6 +253,10 @@ import SwiftUI
                            searchLabel: "Search bots and messages", isSearchDisabled: inbox.connection == nil,
                            openSearch: { showingSearch = true })
                 .sessionsTopChromeListRow()
+            #if targetEnvironment(macCatalyst)
+            HermesHomeDesktopControls(home: home, filter: { filterMenu }, newChat: { newChatMenu })
+                .sessionsScreenListRow()
+            #endif
         }
     }
 

@@ -139,6 +139,10 @@ struct HermesSessionListView: View {
                     openSearch: openSearch
                 )
                 .sessionsTopChromeListRow()
+                #if targetEnvironment(macCatalyst)
+                HermesHomeDesktopControls(home: home, filter: { profileFilter }, newChat: { newSessionButton })
+                    .sessionsScreenListRow()
+                #endif
                 MoveToHermesBanner(serverID: entry.server.absoluteString)
             }
             if viewModel.showsOfflineCache {
@@ -186,6 +190,8 @@ struct HermesSessionListView: View {
         }
         .listStyle(.plain)
         #if targetEnvironment(macCatalyst)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemBackground))
         .adaptiveReadableScrollContent(maxWidth: AdaptiveReadableContentWidth.secondaryDestination)
         #endif
         .environment(\.defaultMinListRowHeight, 0)
